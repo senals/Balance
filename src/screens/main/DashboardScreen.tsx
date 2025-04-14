@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { Text, Card, Button, ProgressBar } from 'react-native-paper';
 import { colors } from '../../theme/colors';
-import { TreeVisualization } from '../../components/TreeVisualization';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 // Mock data for demonstration
 const MOCK_WEEKS_COMPLETED = 3;
@@ -46,12 +46,12 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
     if (weeksCompleted === 0) return 'sprout';
     if (weeksCompleted <= 3) return 'seedling';
     if (weeksCompleted <= 6) return 'sapling';
-    if (weeksCompleted <= 9) return 'young';
-    return 'mature';
+    if (weeksCompleted <= 9) return 'young-tree';
+    return 'mature-tree';
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+    <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Dashboard</Text>
         <Text style={styles.subtitle}>Track your progress</Text>
@@ -62,10 +62,19 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
         <Card style={styles.treeCard}>
           <Card.Content style={styles.treeContent}>
             <View style={styles.treeContainer}>
-              <TreeVisualization 
-                growthStage={getTreeGrowthStage()} 
-                progressPercentage={progressPercentage} 
+              <MaterialCommunityIcons 
+                name={getTreeGrowthStage()} 
+                size={120} 
+                color={colors.primary} 
               />
+              <View style={styles.groundContainer}>
+                <View 
+                  style={[
+                    styles.groundFill, 
+                    { width: `${progressPercentage * 100}%` }
+                  ]} 
+                />
+              </View>
             </View>
             <View style={styles.progressInfo}>
               <Text style={styles.progressAmount}>{weeksCompleted}/{totalWeeks}</Text>
@@ -138,7 +147,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
                   icon="glass-cocktail"
                   compact
                 >
-                  Drink
+                  Drink Tracker
                 </Button>
                 <Button 
                   mode="contained" 
@@ -147,7 +156,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
                   icon="piggy-bank"
                   compact
                 >
-                  Budget
+                  Budget Tracker
                 </Button>
                 <Button 
                   mode="contained" 
@@ -163,7 +172,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
           </Card>
         </View>
       </View>
-    </ScrollView>
+    </View>
   );
 };
 
@@ -171,9 +180,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-  },
-  contentContainer: {
-    flexGrow: 1,
   },
   header: {
     padding: 12,
@@ -205,10 +211,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   treeContainer: {
-    width: 200,
-    height: 200,
+    position: 'relative',
+    width: 120,
+    height: 120,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  groundContainer: {
+    position: 'absolute',
+    bottom: 0,
+    width: 120,
+    height: 10,
+    backgroundColor: colors.background,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  groundFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
   },
   progressInfo: {
     flex: 1,
@@ -238,7 +258,6 @@ const styles = StyleSheet.create({
   bottomRow: {
     flexDirection: 'row',
     flex: 1,
-    marginBottom: 20,
   },
   summaryCard: {
     flex: 1,

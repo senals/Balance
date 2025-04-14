@@ -1,0 +1,20 @@
+<svg width="120" height="120" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg">
+  <!-- Ground -->
+  <rect x="0" y="100" width="120" height="20" fill="#8B4513" />
+  
+  <!-- Trunk -->
+  <path d="M60 100 L60 40" stroke="#8B4513" stroke-width="6" fill="none" />
+  
+  <!-- Branches -->
+  <path d="M60 70 L45 60" stroke="#8B4513" stroke-width="3" fill="none" />
+  <path d="M60 70 L75 60" stroke="#8B4513" stroke-width="3" fill="none" />
+  <path d="M60 60 L45 50" stroke="#8B4513" stroke-width="3" fill="none" />
+  <path d="M60 60 L75 50" stroke="#8B4513" stroke-width="3" fill="none" />
+  
+  <!-- Leaves -->
+  <path d="M45 60 L35 50 L45 55 L55 50 Z" fill="#228B22" />
+  <path d="M75 60 L65 50 L75 55 L85 50 Z" fill="#228B22" />
+  <path d="M45 50 L35 40 L45 45 L55 40 Z" fill="#228B22" />
+  <path d="M75 50 L65 40 L75 45 L85 40 Z" fill="#228B22" />
+  <path d="M60 40 L50 30 L60 35 L70 30 Z" fill="#228B22" />
+</svg> 

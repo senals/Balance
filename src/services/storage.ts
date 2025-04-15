@@ -7,6 +7,10 @@ export const STORAGE_KEYS = {
   SETTINGS: 'settings',
   AUTH_TOKEN: 'auth_token',
   BUDGET: 'budget',
+  PRE_GAME_PLANS: 'pre_game_plans',
+  DAILY_TRACKER: 'daily_tracker',
+  MONTHLY_TRACKER: 'monthly_tracker',
+  HISTORICAL_DATA: 'historical_data',
 } as const;
 
 // Types
@@ -50,6 +54,50 @@ export interface BudgetData {
     date: string;
     notes?: string;
   }>;
+}
+
+export interface PreGamePlan {
+  id: string;
+  title: string;
+  date: string;
+  location: string;
+  maxDrinks: number;
+  maxSpending: number;
+  notes?: string;
+  completed: boolean;
+  createdAt: string;
+  updatedAt: string;
+  // Tracking information
+  actualDrinks?: number;
+  actualSpending?: number;
+  adherencePercentage?: number;
+  drinksAdherencePercentage?: number;
+  spendingAdherencePercentage?: number;
+  trackedDrinks?: string[]; // IDs of drinks tracked during this event
+}
+
+export interface DailyTracker {
+  date: string; // Format: YYYY-MM-DD
+  drinks: number;
+  spending: number;
+  completed: boolean;
+  lastUpdated: string;
+}
+
+export interface MonthlyTracker {
+  year: number;
+  month: number; // 1-12
+  drinks: number;
+  spending: number;
+  daysWithinLimit: number;
+  totalDays: number;
+  completed: boolean;
+  lastUpdated: string;
+}
+
+export interface HistoricalData {
+  dailyRecords: DailyTracker[];
+  monthlyRecords: MonthlyTracker[];
 }
 
 // Error class for storage operations
@@ -207,6 +255,196 @@ export const storage = {
       const current = await this.get();
       const updated = { ...current, ...updates };
       await storage.set(STORAGE_KEYS.BUDGET, updated);
+      return updated;
+    },
+  },
+
+  preGamePlans: {
+    async getAll(): Promise<PreGamePlan[]> {
+      const plans = await storage.get<PreGamePlan[]>(STORAGE_KEYS.PRE_GAME_PLANS);
+      return plans || [];
+    },
+
+    async add(plan: Omit<PreGamePlan, 'id' | 'createdAt' | 'updatedAt'>): Promise<PreGamePlan> {
+      const plans = await this.getAll();
+      const now = new Date().toISOString();
+      const newPlan: PreGamePlan = {
+        ...plan,
+        id: Date.now().toString(),
+        createdAt: now,
+        updatedAt: now,
+      };
+      plans.push(newPlan);
+      await storage.set(STORAGE_KEYS.PRE_GAME_PLANS, plans);
+      return newPlan;
+    },
+
+    async update(id: string, updates: Partial<PreGamePlan>): Promise<PreGamePlan> {
+      const plans = await this.getAll();
+      const index = plans.findIndex(p => p.id === id);
+      if (index === -1) {
+        throw new StorageError('Pre-game plan not found', 'update', STORAGE_KEYS.PRE_GAME_PLANS);
+      }
+      plans[index] = { 
+        ...plans[index], 
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      await storage.set(STORAGE_KEYS.PRE_GAME_PLANS, plans);
+      return plans[index];
+    },
+
+    async remove(id: string): Promise<void> {
+      const plans = await this.getAll();
+      const filtered = plans.filter(p => p.id !== id);
+      await storage.set(STORAGE_KEYS.PRE_GAME_PLANS, filtered);
+    },
+  },
+
+  dailyTracker: {
+    async getCurrent(): Promise<DailyTracker | null> {
+      const today = new Date().toISOString().split('T')[0];
+      const tracker = await storage.get<DailyTracker>(`${STORAGE_KEYS.DAILY_TRACKER}_${today}`);
+      return tracker;
+    },
+
+    async getOrCreateCurrent(): Promise<DailyTracker> {
+      const today = new Date().toISOString().split('T')[0];
+      const tracker = await this.getCurrent();
+      
+      if (tracker) {
+        return tracker;
+      }
+      
+      // Create a new tracker for today
+      const newTracker: DailyTracker = {
+        date: today,
+        drinks: 0,
+        spending: 0,
+        completed: false,
+        lastUpdated: new Date().toISOString(),
+      };
+      
+      await storage.set(`${STORAGE_KEYS.DAILY_TRACKER}_${today}`, newTracker);
+      return newTracker;
+    },
+
+    async updateCurrent(updates: Partial<DailyTracker>): Promise<DailyTracker> {
+      const today = new Date().toISOString().split('T')[0];
+      const current = await this.getOrCreateCurrent();
+      const updated = { ...current, ...updates, lastUpdated: new Date().toISOString() };
+      await storage.set(`${STORAGE_KEYS.DAILY_TRACKER}_${today}`, updated);
+      return updated;
+    },
+
+    async markAsCompleted(): Promise<DailyTracker> {
+      const today = new Date().toISOString().split('T')[0];
+      const current = await this.getOrCreateCurrent();
+      const updated = { ...current, completed: true, lastUpdated: new Date().toISOString() };
+      await storage.set(`${STORAGE_KEYS.DAILY_TRACKER}_${today}`, updated);
+      
+      // Also save to historical data
+      await this.saveToHistory(updated);
+      
+      return updated;
+    },
+
+    async saveToHistory(tracker: DailyTracker): Promise<void> {
+      const historicalData = await storage.historicalData.get();
+      const updatedRecords = [...historicalData.dailyRecords, tracker];
+      await storage.historicalData.update({ dailyRecords: updatedRecords });
+    },
+
+    async getForDate(date: string): Promise<DailyTracker | null> {
+      return storage.get<DailyTracker>(`${STORAGE_KEYS.DAILY_TRACKER}_${date}`);
+    },
+  },
+
+  monthlyTracker: {
+    async getCurrent(): Promise<MonthlyTracker | null> {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1; // 1-12
+      const key = `${STORAGE_KEYS.MONTHLY_TRACKER}_${year}_${month}`;
+      return storage.get<MonthlyTracker>(key);
+    },
+
+    async getOrCreateCurrent(): Promise<MonthlyTracker> {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1; // 1-12
+      const key = `${STORAGE_KEYS.MONTHLY_TRACKER}_${year}_${month}`;
+      const tracker = await storage.get<MonthlyTracker>(key);
+      
+      if (tracker) {
+        return tracker;
+      }
+      
+      // Create a new tracker for this month
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const newTracker: MonthlyTracker = {
+        year,
+        month,
+        drinks: 0,
+        spending: 0,
+        daysWithinLimit: 0,
+        totalDays: daysInMonth,
+        completed: false,
+        lastUpdated: new Date().toISOString(),
+      };
+      
+      await storage.set(key, newTracker);
+      return newTracker;
+    },
+
+    async updateCurrent(updates: Partial<MonthlyTracker>): Promise<MonthlyTracker> {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1; // 1-12
+      const key = `${STORAGE_KEYS.MONTHLY_TRACKER}_${year}_${month}`;
+      const current = await this.getOrCreateCurrent();
+      const updated = { ...current, ...updates, lastUpdated: new Date().toISOString() };
+      await storage.set(key, updated);
+      return updated;
+    },
+
+    async markAsCompleted(): Promise<MonthlyTracker> {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth() + 1; // 1-12
+      const key = `${STORAGE_KEYS.MONTHLY_TRACKER}_${year}_${month}`;
+      const current = await this.getOrCreateCurrent();
+      const updated = { ...current, completed: true, lastUpdated: new Date().toISOString() };
+      await storage.set(key, updated);
+      
+      // Also save to historical data
+      await this.saveToHistory(updated);
+      
+      return updated;
+    },
+
+    async saveToHistory(tracker: MonthlyTracker): Promise<void> {
+      const historicalData = await storage.historicalData.get();
+      const updatedRecords = [...historicalData.monthlyRecords, tracker];
+      await storage.historicalData.update({ monthlyRecords: updatedRecords });
+    },
+
+    async getForMonth(year: number, month: number): Promise<MonthlyTracker | null> {
+      const key = `${STORAGE_KEYS.MONTHLY_TRACKER}_${year}_${month}`;
+      return storage.get<MonthlyTracker>(key);
+    },
+  },
+
+  historicalData: {
+    async get(): Promise<HistoricalData> {
+      const data = await storage.get<HistoricalData>(STORAGE_KEYS.HISTORICAL_DATA);
+      return data || { dailyRecords: [], monthlyRecords: [] };
+    },
+
+    async update(updates: Partial<HistoricalData>): Promise<HistoricalData> {
+      const current = await this.get();
+      const updated = { ...current, ...updates };
+      await storage.set(STORAGE_KEYS.HISTORICAL_DATA, updated);
       return updated;
     },
   },

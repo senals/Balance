@@ -50,7 +50,7 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
   const progressPercentage = dailySpent / dailyBudget;
   
   const handleAddExpense = () => {
-    navigation.navigate('DrinkInput');
+    navigation.navigate('ExpenseInput');
   };
   
   const handleViewDetails = () => {

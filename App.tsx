@@ -6,7 +6,8 @@ import { HomeScreen } from './src/screens/main/HomeScreen';
 import { LoginScreen } from './src/screens/main/LoginScreen';
 import { RegisterScreen } from './src/screens/main/RegisterScreen';
 import { MainTabNavigator } from './src/navigation/MainTabNavigator';
-import { DrinkInputScreen } from './src/screens/main/DrinkInputScreen';
+import { DrinkInputContainer } from './src/screens/main/DrinkInputContainer';
+import { ExpenseInputScreen } from './src/screens/main/ExpenseInputScreen';
 import { colors } from './src/theme/colors';
 import { AppProvider } from './src/context/AppContext';
 import { LoadingOverlay } from './src/components/LoadingOverlay';
@@ -19,6 +20,7 @@ type RootStackParamList = {
   Register: undefined;
   Main: undefined;
   DrinkInput: undefined;
+  ExpenseInput: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -59,7 +61,8 @@ const Navigation = () => {
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
           <Stack.Screen name="Main" component={MainTabNavigator} />
-          <Stack.Screen name="DrinkInput" component={DrinkInputScreen} />
+          <Stack.Screen name="DrinkInput" component={DrinkInputContainer} />
+          <Stack.Screen name="ExpenseInput" component={ExpenseInputScreen} />
         </Stack.Navigator>
       </NavigationContainer>
       <LoadingOverlay visible={isLoading} message={error || 'Loading...'} />

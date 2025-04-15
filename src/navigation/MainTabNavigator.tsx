@@ -6,12 +6,14 @@ import { colors } from '../theme/colors';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { BudgetTrackerScreen } from '../screens/main/BudgetTrackerScreen';
 import { ProfileScreen } from '../screens/main/ProfileScreen';
+import { PreGamePlannerScreen } from '../screens/main/PreGamePlannerScreen';
 
 // Define the tab navigator param list
 export type MainTabParamList = {
   Dashboard: undefined;
   DrinkTracker: undefined;
   BudgetTracker: undefined;
+  PreGamePlanner: undefined;
   Profile: undefined;
 };
 
@@ -62,6 +64,16 @@ export const MainTabNavigator = () => {
           tabBarLabel: 'Budget',
           tabBarIcon: ({ color, size }) => (
             <Icon name="cash" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="PreGamePlanner"
+        component={PreGamePlannerScreen}
+        options={{
+          tabBarLabel: 'Pre-Game',
+          tabBarIcon: ({ color, size }) => (
+            <Icon name="calendar-check" size={size} color={color} />
           ),
         }}
       />

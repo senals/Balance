@@ -63,7 +63,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
           <Card.Content style={styles.treeContent}>
             <View style={styles.treeContainer}>
               <MaterialCommunityIcons 
-                name={getTreeGrowthStage()} 
+                name={getTreeGrowthStage() as any} 
                 size={120} 
                 color={colors.primary} 
               />

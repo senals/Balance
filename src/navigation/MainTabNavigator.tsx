@@ -5,12 +5,14 @@ import { DrinkTrackerScreen } from '../screens/main/DrinkTrackerScreen';
 import { colors } from '../theme/colors';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { BudgetTrackerScreen } from '../screens/main/BudgetTrackerScreen';
+import { ProfileScreen } from '../screens/main/ProfileScreen';
 
 // Define the tab navigator param list
 export type MainTabParamList = {
   Dashboard: undefined;
   DrinkTracker: undefined;
   BudgetTracker: undefined;
+  Profile: undefined;
 };
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -60,6 +62,15 @@ export const MainTabNavigator = () => {
           tabBarLabel: 'Budget',
           tabBarIcon: ({ color, size }) => (
             <Icon name="cash" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{
+          tabBarIcon: ({ color, size }) => (
+            <Icon name="account" size={size} color={color} />
           ),
         }}
       />

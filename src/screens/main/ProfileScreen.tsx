@@ -1,9 +1,53 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, Button, Card, Avatar } from 'react-native-paper';
+import { Text, Button, Card, Avatar, List, Switch, Divider } from 'react-native-paper';
 import { colors } from '../../theme/colors';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+
+// Mock user data
+const MOCK_USER = {
+  name: 'John Doe',
+  email: 'john.doe@example.com',
+  university: 'University of Example',
+  yearOfStudy: '3rd Year',
+  joinDate: 'January 2023',
+  totalDrinks: 42,
+  totalSpent: 320,
+  weeklyAverage: 3.5,
+  monthlyAverage: 14,
+};
 
 export const ProfileScreen = ({ navigation }: { navigation: any }) => {
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+  const [darkModeEnabled, setDarkModeEnabled] = useState(false);
+  const [privacyModeEnabled, setPrivacyModeEnabled] = useState(false);
+  
+  const handleLogout = () => {
+    // TODO: Implement actual logout logic
+    console.log('Logging out');
+    navigation.navigate('Login');
+  };
+  
+  const handleEditProfile = () => {
+    // TODO: Navigate to edit profile screen
+    console.log('Edit profile');
+  };
+  
+  const handleViewStatistics = () => {
+    // TODO: Navigate to statistics screen
+    console.log('View statistics');
+  };
+  
+  const handleViewSettings = () => {
+    // TODO: Navigate to settings screen
+    console.log('View settings');
+  };
+  
+  const handleViewHelp = () => {
+    // TODO: Navigate to help screen
+    console.log('View help');
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -12,59 +56,160 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
       </View>
       
       <ScrollView style={styles.content}>
+        {/* User Profile Card */}
         <Card style={styles.card}>
           <Card.Content style={styles.profileCard}>
             <Avatar.Text 
               size={80} 
-              label="JD" 
+              label={MOCK_USER.name.split(' ').map(n => n[0]).join('')} 
               style={{ backgroundColor: colors.primary }}
             />
             <View style={styles.profileInfo}>
-              <Text style={styles.profileName}>John Doe</Text>
-              <Text style={styles.profileEmail}>john.doe@example.com</Text>
-              <Text style={styles.profileUniversity}>University of Example</Text>
+              <Text style={styles.profileName}>{MOCK_USER.name}</Text>
+              <Text style={styles.profileEmail}>{MOCK_USER.email}</Text>
+              <Text style={styles.profileUniversity}>{MOCK_USER.university} - {MOCK_USER.yearOfStudy}</Text>
+              <Text style={styles.profileJoinDate}>Member since {MOCK_USER.joinDate}</Text>
             </View>
           </Card.Content>
-        </Card>
-        
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>Settings</Text>
+          <Card.Actions>
             <Button 
               mode="outlined" 
-              onPress={() => console.log('Edit profile')}
-              style={styles.settingButton}
+              onPress={handleEditProfile}
+              style={styles.editButton}
             >
               Edit Profile
             </Button>
+          </Card.Actions>
+        </Card>
+        
+        {/* Statistics Card */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>Statistics</Text>
+            <View style={styles.statsContainer}>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{MOCK_USER.totalDrinks}</Text>
+                <Text style={styles.statLabel}>Total Drinks</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>${MOCK_USER.totalSpent}</Text>
+                <Text style={styles.statLabel}>Total Spent</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{MOCK_USER.weeklyAverage}</Text>
+                <Text style={styles.statLabel}>Weekly Avg</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Text style={styles.statValue}>{MOCK_USER.monthlyAverage}</Text>
+                <Text style={styles.statLabel}>Monthly Avg</Text>
+              </View>
+            </View>
             <Button 
               mode="outlined" 
-              onPress={() => console.log('Notifications')}
-              style={styles.settingButton}
+              onPress={handleViewStatistics}
+              style={styles.viewButton}
             >
-              Notifications
-            </Button>
-            <Button 
-              mode="outlined" 
-              onPress={() => console.log('Privacy')}
-              style={styles.settingButton}
-            >
-              Privacy
-            </Button>
-            <Button 
-              mode="outlined" 
-              onPress={() => console.log('Help')}
-              style={styles.settingButton}
-            >
-              Help & Support
+              View Detailed Statistics
             </Button>
           </Card.Content>
         </Card>
         
+        {/* Settings Card */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>Settings</Text>
+            <List.Section>
+              <List.Item
+                title="Notifications"
+                description="Receive alerts and reminders"
+                left={props => <List.Icon {...props} icon="bell" color={colors.primary} />}
+                right={() => (
+                  <Switch
+                    value={notificationsEnabled}
+                    onValueChange={setNotificationsEnabled}
+                    color={colors.primary}
+                  />
+                )}
+              />
+              <Divider />
+              <List.Item
+                title="Dark Mode"
+                description="Use dark theme"
+                left={props => <List.Icon {...props} icon="theme-light-dark" color={colors.primary} />}
+                right={() => (
+                  <Switch
+                    value={darkModeEnabled}
+                    onValueChange={setDarkModeEnabled}
+                    color={colors.primary}
+                  />
+                )}
+              />
+              <Divider />
+              <List.Item
+                title="Privacy Mode"
+                description="Hide sensitive information"
+                left={props => <List.Icon {...props} icon="shield-lock" color={colors.primary} />}
+                right={() => (
+                  <Switch
+                    value={privacyModeEnabled}
+                    onValueChange={setPrivacyModeEnabled}
+                    color={colors.primary}
+                  />
+                )}
+              />
+            </List.Section>
+            <Button 
+              mode="outlined" 
+              onPress={handleViewSettings}
+              style={styles.viewButton}
+            >
+              More Settings
+            </Button>
+          </Card.Content>
+        </Card>
+        
+        {/* Help & Support Card */}
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>Help & Support</Text>
+            <List.Section>
+              <List.Item
+                title="FAQ"
+                description="Frequently asked questions"
+                left={props => <List.Icon {...props} icon="frequently-asked-questions" color={colors.primary} />}
+                onPress={() => console.log('FAQ')}
+              />
+              <Divider />
+              <List.Item
+                title="Contact Support"
+                description="Get help from our team"
+                left={props => <List.Icon {...props} icon="email" color={colors.primary} />}
+                onPress={() => console.log('Contact Support')}
+              />
+              <Divider />
+              <List.Item
+                title="Privacy Policy"
+                description="Read our privacy policy"
+                left={props => <List.Icon {...props} icon="file-document" color={colors.primary} />}
+                onPress={() => console.log('Privacy Policy')}
+              />
+            </List.Section>
+            <Button 
+              mode="outlined" 
+              onPress={handleViewHelp}
+              style={styles.viewButton}
+            >
+              More Help
+            </Button>
+          </Card.Content>
+        </Card>
+        
+        {/* Logout Button */}
         <Button 
-          mode="outlined" 
-          onPress={() => navigation.navigate('Login')}
+          mode="contained" 
+          onPress={handleLogout}
           style={styles.logoutButton}
+          icon="logout"
         >
           Logout
         </Button>
@@ -79,61 +224,96 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   header: {
-    padding: 20,
+    padding: 12,
     paddingTop: 40,
   },
   title: {
-    fontSize: 32,
+    fontSize: 22,
     fontWeight: 'bold',
     color: colors.primary,
-    marginBottom: 10,
   },
   subtitle: {
-    fontSize: 18,
+    fontSize: 14,
     color: colors.text,
-    marginBottom: 20,
+    opacity: 0.7,
   },
   content: {
     flex: 1,
-    padding: 20,
+    padding: 12,
   },
   card: {
-    marginBottom: 20,
+    marginBottom: 12,
     backgroundColor: colors.surface,
+    borderRadius: 12,
+    elevation: 2,
   },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   profileInfo: {
-    marginLeft: 20,
+    marginLeft: 16,
+    flex: 1,
   },
   profileName: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: 'bold',
     color: colors.text,
   },
   profileEmail: {
-    fontSize: 16,
+    fontSize: 14,
     color: colors.text,
-    marginTop: 5,
+    opacity: 0.7,
   },
   profileUniversity: {
-    fontSize: 16,
+    fontSize: 14,
     color: colors.text,
-    marginTop: 5,
+    opacity: 0.7,
+    marginTop: 2,
+  },
+  profileJoinDate: {
+    fontSize: 12,
+    color: colors.text,
+    opacity: 0.5,
+    marginTop: 2,
+  },
+  editButton: {
+    marginTop: 8,
   },
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 15,
+    marginBottom: 12,
   },
-  settingButton: {
-    marginBottom: 10,
+  statsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  statItem: {
+    width: '48%',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: colors.primary,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: colors.text,
+    opacity: 0.7,
+    marginTop: 2,
+  },
+  viewButton: {
+    marginTop: 4,
   },
   logoutButton: {
-    marginTop: 10,
-    marginBottom: 30,
+    marginTop: 12,
+    marginBottom: 24,
+    backgroundColor: colors.error,
   },
 }); 

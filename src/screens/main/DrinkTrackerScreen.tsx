@@ -1,26 +1,47 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text, Card, Button, IconButton, ProgressBar } from 'react-native-paper';
 import { colors } from '../../theme/colors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-
-// Mock data for demonstration
-const MOCK_DAILY_LIMIT = 3;
-const MOCK_DAILY_CONSUMPTION = 1;
-const MOCK_WEEKLY_CONSUMPTION = 8;
-const MOCK_MONTHLY_CONSUMPTION = 32;
-const MOCK_RECENT_DRINKS = [
-  { id: '1', drink: 'Heineken', date: '2023-06-15', time: '20:30' },
-  { id: '2', drink: 'Wine', date: '2023-06-14', time: '19:45' },
-  { id: '3', drink: 'Cocktail', date: '2023-06-13', time: '21:15' },
-];
+import { useApp } from '../../context/AppContext';
 
 export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
-  const [dailyLimit, setDailyLimit] = useState(MOCK_DAILY_LIMIT);
-  const [dailyConsumption, setDailyConsumption] = useState(MOCK_DAILY_CONSUMPTION);
-  const [weeklyConsumption, setWeeklyConsumption] = useState(MOCK_WEEKLY_CONSUMPTION);
-  const [monthlyConsumption, setMonthlyConsumption] = useState(MOCK_MONTHLY_CONSUMPTION);
-  const [recentDrinks, setRecentDrinks] = useState(MOCK_RECENT_DRINKS);
+  const { drinks, settings, error } = useApp();
+
+  // Calculate daily consumption
+  const today = new Date().toISOString().split('T')[0];
+  const dailyDrinks = drinks.filter(drink => 
+    drink.timestamp.startsWith(today)
+  );
+  const dailyConsumption = dailyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
+  const dailyLimit = settings.dailyLimit;
+
+  // Calculate weekly consumption
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+  const weeklyDrinks = drinks.filter(drink => 
+    new Date(drink.timestamp) >= weekStart
+  );
+  const weeklyConsumption = weeklyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
+
+  // Calculate monthly consumption
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  const monthlyDrinks = drinks.filter(drink => 
+    new Date(drink.timestamp) >= monthStart
+  );
+  const monthlyConsumption = monthlyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
+
+  // Get recent drinks
+  const recentDrinks = [...drinks]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 3)
+    .map(drink => ({
+      id: drink.id,
+      drink: `${drink.brand} (${drink.quantity}x)`,
+      date: new Date(drink.timestamp).toLocaleDateString(),
+      time: new Date(drink.timestamp).toLocaleTimeString(),
+    }));
   
   const progressPercentage = dailyConsumption / dailyLimit;
   
@@ -29,7 +50,6 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
   };
   
   const handleViewDetails = () => {
-    // This would navigate to a detailed analysis screen in a real app
     console.log('View drink details');
   };
 
@@ -89,7 +109,9 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
                 </View>
                 <View style={styles.summaryItem}>
                   <Text style={styles.summaryLabel}>Avg/Day</Text>
-                  <Text style={styles.summaryValue}>{(monthlyConsumption / 30).toFixed(1)}</Text>
+                  <Text style={styles.summaryValue}>
+                    {(monthlyConsumption / (new Date().getDate())).toFixed(1)}
+                  </Text>
                 </View>
               </View>
               <Button 
@@ -107,14 +129,18 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
           <Card style={styles.recentCard}>
             <Card.Content>
               <Text style={styles.sectionTitle}>Recent</Text>
-              {recentDrinks.map(drink => (
-                <View key={drink.id} style={styles.drinkItem}>
-                  <View style={styles.drinkInfo}>
-                    <Text style={styles.drinkName}>{drink.drink}</Text>
-                    <Text style={styles.drinkDateTime}>{drink.date} {drink.time}</Text>
+              {recentDrinks.length > 0 ? (
+                recentDrinks.map(drink => (
+                  <View key={drink.id} style={styles.drinkItem}>
+                    <View style={styles.drinkInfo}>
+                      <Text style={styles.drinkName}>{drink.drink}</Text>
+                      <Text style={styles.drinkDateTime}>{drink.date} {drink.time}</Text>
+                    </View>
                   </View>
-                </View>
-              ))}
+                ))
+              ) : (
+                <Text style={styles.emptyMessage}>No drinks recorded yet</Text>
+              )}
               <Button 
                 mode="contained" 
                 onPress={handleAddDrink}
@@ -277,5 +303,11 @@ const styles = StyleSheet.create({
   },
   addButton: {
     marginTop: 8,
+  },
+  emptyMessage: {
+    textAlign: 'center',
+    color: colors.text,
+    opacity: 0.7,
+    marginBottom: 8,
   },
 }); 

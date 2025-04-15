@@ -1,33 +1,60 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import React from 'react';
+import { View, StyleSheet } from 'react-native';
 import { Text, Card, Button, IconButton, ProgressBar } from 'react-native-paper';
 import { colors } from '../../theme/colors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-
-// Mock data for demonstration
-const MOCK_BUDGET = 200;
-const MOCK_SPENT = 75;
-const MOCK_RECENT_EXPENSES = [
-  { id: '1', drink: 'Heineken', amount: 5.99, date: '2023-06-15' },
-  { id: '2', drink: 'Wine', amount: 8.50, date: '2023-06-14' },
-  { id: '3', drink: 'Cocktail', amount: 12.00, date: '2023-06-13' },
-];
+import { useApp } from '../../context/AppContext';
 
 export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
-  const [budget, setBudget] = useState(MOCK_BUDGET);
-  const [spent, setSpent] = useState(MOCK_SPENT);
-  const [recentExpenses, setRecentExpenses] = useState(MOCK_RECENT_EXPENSES);
+  const { drinks, budget, error } = useApp();
+
+  // Calculate daily spending
+  const today = new Date().toISOString().split('T')[0];
+  const dailyDrinks = drinks.filter(drink => 
+    drink.timestamp.startsWith(today)
+  );
+  const dailySpent = dailyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
+  const dailyBudget = budget.dailyBudget;
+
+  // Calculate weekly spending
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+  const weeklyDrinks = drinks.filter(drink => 
+    new Date(drink.timestamp) >= weekStart
+  );
+  const weeklySpent = weeklyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
+  const weeklyBudget = budget.weeklyBudget;
+
+  // Calculate monthly spending
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  const monthlyDrinks = drinks.filter(drink => 
+    new Date(drink.timestamp) >= monthStart
+  );
+  const monthlySpent = monthlyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
+  const monthlyBudget = budget.monthlyBudget;
+
+  // Get recent expenses
+  const recentExpenses = [...drinks]
+    .filter(drink => drink.price > 0)
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 3)
+    .map(drink => ({
+      id: drink.id,
+      description: `${drink.brand} (${drink.quantity}x)`,
+      amount: drink.price,
+      date: new Date(drink.timestamp).toLocaleDateString(),
+      time: new Date(drink.timestamp).toLocaleTimeString(),
+    }));
   
-  const progressPercentage = spent / budget;
-  const remaining = budget - spent;
+  const progressPercentage = dailySpent / dailyBudget;
   
   const handleAddExpense = () => {
     navigation.navigate('DrinkInput');
   };
   
-  const handleViewAnalysis = () => {
-    // This would navigate to a detailed analysis screen in a real app
-    console.log('View spending analysis');
+  const handleViewDetails = () => {
+    console.log('View budget details');
   };
 
   return (
@@ -38,53 +65,87 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
       </View>
       
       <View style={styles.content}>
-        {/* Piggy Bank Visual */}
-        <Card style={styles.piggyBankCard}>
-          <Card.Content style={styles.piggyBankContent}>
-            <View style={styles.piggyBankContainer}>
+        {/* Monthly Budget Visual */}
+        <Card style={styles.budgetCard}>
+          <Card.Content style={styles.budgetContent}>
+            <View style={styles.budgetContainer}>
               <MaterialCommunityIcons 
                 name="piggy-bank" 
                 size={100} 
                 color={colors.primary} 
               />
-              <View style={styles.piggyBankFillContainer}>
+              <View style={styles.budgetFillContainer}>
                 <View 
                   style={[
-                    styles.piggyBankFill, 
+                    styles.budgetFill, 
                     { height: `${progressPercentage * 100}%` }
                   ]} 
                 />
               </View>
             </View>
             <View style={styles.budgetInfo}>
-              <Text style={styles.budgetAmount}>${budget}</Text>
-              <Text style={styles.budgetLabel}>Monthly Budget</Text>
+              <Text style={styles.budgetAmount}>${dailySpent.toFixed(2)}/${dailyBudget.toFixed(2)}</Text>
+              <Text style={styles.budgetLabel}>Daily Budget</Text>
               <ProgressBar 
                 progress={progressPercentage} 
                 color={progressPercentage > 0.8 ? colors.error : colors.primary} 
                 style={styles.progressBar} 
               />
-              <Text style={styles.spentAmount}>${spent} spent</Text>
-              <Text style={styles.remainingAmount}>${remaining} remaining</Text>
+              <Text style={styles.remainingAmount}>${(dailyBudget - dailySpent).toFixed(2)} remaining</Text>
             </View>
           </Card.Content>
         </Card>
         
-        {/* Recent Expenses and Analysis in a row */}
+        {/* Budget Summary and Recent Expenses in a row */}
         <View style={styles.bottomRow}>
-          {/* Recent Expenses */}
-          <Card style={styles.expensesCard}>
+          {/* Budget Summary */}
+          <Card style={styles.summaryCard}>
             <Card.Content>
-              <Text style={styles.sectionTitle}>Recent Expenses</Text>
-              {recentExpenses.map(expense => (
-                <View key={expense.id} style={styles.expenseItem}>
-                  <View style={styles.expenseInfo}>
-                    <Text style={styles.expenseDrink}>{expense.drink}</Text>
-                    <Text style={styles.expenseDate}>{expense.date}</Text>
-                  </View>
-                  <Text style={styles.expenseAmount}>${expense.amount}</Text>
+              <Text style={styles.sectionTitle}>Summary</Text>
+              <View style={styles.summaryContent}>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Weekly</Text>
+                  <Text style={styles.summaryValue}>${weeklySpent.toFixed(2)}</Text>
                 </View>
-              ))}
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Monthly</Text>
+                  <Text style={styles.summaryValue}>${monthlySpent.toFixed(2)}</Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Daily Avg</Text>
+                  <Text style={styles.summaryValue}>
+                    ${(monthlySpent / (new Date().getDate())).toFixed(2)}
+                  </Text>
+                </View>
+              </View>
+              <Button 
+                mode="outlined" 
+                onPress={handleViewDetails}
+                style={styles.detailsButton}
+                compact
+              >
+                Details
+              </Button>
+            </Card.Content>
+          </Card>
+          
+          {/* Recent Expenses */}
+          <Card style={styles.recentCard}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>Recent</Text>
+              {recentExpenses.length > 0 ? (
+                recentExpenses.map(expense => (
+                  <View key={expense.id} style={styles.expenseItem}>
+                    <View style={styles.expenseInfo}>
+                      <Text style={styles.expenseDescription}>{expense.description}</Text>
+                      <Text style={styles.expenseDateTime}>{expense.date} {expense.time}</Text>
+                    </View>
+                    <Text style={styles.expenseAmount}>${expense.amount.toFixed(2)}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.emptyMessage}>No expenses recorded yet</Text>
+              )}
               <Button 
                 mode="contained" 
                 onPress={handleAddExpense}
@@ -92,35 +153,6 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
                 compact
               >
                 Add Expense
-              </Button>
-            </Card.Content>
-          </Card>
-          
-          {/* Spending Analysis */}
-          <Card style={styles.analysisCard}>
-            <Card.Content>
-              <Text style={styles.sectionTitle}>Analysis</Text>
-              <View style={styles.analysisContent}>
-                <View style={styles.analysisItem}>
-                  <Text style={styles.analysisLabel}>Daily Avg</Text>
-                  <Text style={styles.analysisValue}>${(spent / 15).toFixed(2)}</Text>
-                </View>
-                <View style={styles.analysisItem}>
-                  <Text style={styles.analysisLabel}>Weekly Avg</Text>
-                  <Text style={styles.analysisValue}>${(spent / 2).toFixed(2)}</Text>
-                </View>
-                <View style={styles.analysisItem}>
-                  <Text style={styles.analysisLabel}>Monthly</Text>
-                  <Text style={styles.analysisValue}>${(spent * 2).toFixed(2)}</Text>
-                </View>
-              </View>
-              <Button 
-                mode="outlined" 
-                onPress={handleViewAnalysis}
-                style={styles.analysisButton}
-                compact
-              >
-                Details
               </Button>
             </Card.Content>
           </Card>
@@ -153,25 +185,25 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 12,
   },
-  piggyBankCard: {
+  budgetCard: {
     marginBottom: 12,
     backgroundColor: colors.surface,
     borderRadius: 12,
     elevation: 2,
   },
-  piggyBankContent: {
+  budgetContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  piggyBankContainer: {
+  budgetContainer: {
     position: 'relative',
     width: 100,
     height: 100,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  piggyBankFillContainer: {
+  budgetFillContainer: {
     position: 'absolute',
     bottom: 0,
     width: 80,
@@ -179,7 +211,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     overflow: 'hidden',
   },
-  piggyBankFill: {
+  budgetFill: {
     width: '100%',
     backgroundColor: colors.primary + '40', // 40% opacity
     borderBottomLeftRadius: 40,
@@ -205,11 +237,6 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     marginBottom: 6,
   },
-  spentAmount: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.text,
-  },
   remainingAmount: {
     fontSize: 12,
     color: colors.text,
@@ -219,14 +246,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flex: 1,
   },
-  expensesCard: {
+  summaryCard: {
     flex: 1,
     marginRight: 6,
     backgroundColor: colors.surface,
     borderRadius: 12,
     elevation: 2,
   },
-  analysisCard: {
+  recentCard: {
     flex: 1,
     marginLeft: 6,
     backgroundColor: colors.surface,
@@ -239,6 +266,25 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 8,
   },
+  summaryContent: {
+    marginBottom: 8,
+  },
+  summaryItem: {
+    marginBottom: 6,
+  },
+  summaryLabel: {
+    fontSize: 10,
+    color: colors.text,
+    opacity: 0.7,
+  },
+  summaryValue: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.primary,
+  },
+  detailsButton: {
+    marginTop: 4,
+  },
   expenseItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -250,12 +296,12 @@ const styles = StyleSheet.create({
   expenseInfo: {
     flex: 1,
   },
-  expenseDrink: {
+  expenseDescription: {
     fontSize: 14,
     fontWeight: 'bold',
     color: colors.text,
   },
-  expenseDate: {
+  expenseDateTime: {
     fontSize: 10,
     color: colors.text,
     opacity: 0.7,
@@ -268,23 +314,10 @@ const styles = StyleSheet.create({
   addButton: {
     marginTop: 8,
   },
-  analysisContent: {
-    marginBottom: 8,
-  },
-  analysisItem: {
-    marginBottom: 6,
-  },
-  analysisLabel: {
-    fontSize: 10,
+  emptyMessage: {
+    textAlign: 'center',
     color: colors.text,
     opacity: 0.7,
-  },
-  analysisValue: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.primary,
-  },
-  analysisButton: {
-    marginTop: 4,
+    marginBottom: 8,
   },
 }); 

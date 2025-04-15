@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { Text, TextInput, Button, Card, IconButton, SegmentedButtons } from 'react-native-paper';
+import { View, StyleSheet, ScrollView } from 'react-native';
+import { Text, TextInput, Button, Card, IconButton, SegmentedButtons, Snackbar } from 'react-native-paper';
 import { colors } from '../../theme/colors';
 import { DrinkHierarchySelector } from '../../components/DrinkHierarchySelector';
+import { useApp } from '../../context/AppContext';
 
 export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
+  const { addDrink, drinks, error } = useApp();
   const [selectedDrink, setSelectedDrink] = useState<{
     category: string;
     type: string;
@@ -16,30 +18,47 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
   const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
   const [inputMode, setInputMode] = useState('drink');
+  const [snackbarVisible, setSnackbarVisible] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
 
-  const handleSaveDrink = () => {
+  const handleSaveDrink = async () => {
     if (!selectedDrink) return;
     
-    // Log the drink data (would be saved to database in a real app)
-    console.log('Drink saved:', {
-      ...selectedDrink,
-      quantity: parseInt(quantity),
-      price: parseFloat(price) || 0,
-      location,
-      notes,
-      timestamp: new Date().toISOString(),
-    });
-    
-    // Navigate back to the appropriate screen based on input mode
-    if (inputMode === 'drink') {
-      navigation.navigate('DrinkTracker');
-    } else {
-      navigation.navigate('BudgetTracker');
+    try {
+      await addDrink({
+        ...selectedDrink,
+        quantity: parseInt(quantity),
+        price: parseFloat(price) || 0,
+        location,
+        notes,
+        timestamp: new Date().toISOString(),
+      });
+
+      setSnackbarMessage('Drink saved successfully!');
+      setSnackbarVisible(true);
+      
+      // Navigate back after a short delay
+      setTimeout(() => {
+        if (inputMode === 'drink') {
+          navigation.navigate('DrinkTracker');
+        } else {
+          navigation.navigate('BudgetTracker');
+        }
+      }, 1500);
+    } catch (error) {
+      setSnackbarMessage(error instanceof Error ? error.message : 'Failed to save drink');
+      setSnackbarVisible(true);
     }
   };
 
+  const handleTestStorage = () => {
+    setSnackbarMessage(`Current number of drinks stored: ${drinks.length}`);
+    setSnackbarVisible(true);
+    console.log('All stored drinks:', drinks);
+  };
+
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <View style={styles.header}>
         <IconButton
           icon="arrow-left"
@@ -147,8 +166,25 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
         >
           Save {inputMode === 'drink' ? 'Drink' : 'Expense'}
         </Button>
+
+        <Button
+          mode="outlined"
+          onPress={handleTestStorage}
+          style={styles.testButton}
+        >
+          Test Storage
+        </Button>
       </View>
-    </View>
+
+      <Snackbar
+        visible={snackbarVisible}
+        onDismiss={() => setSnackbarVisible(false)}
+        duration={3000}
+        style={styles.snackbar}
+      >
+        {snackbarMessage}
+      </Snackbar>
+    </ScrollView>
   );
 };
 
@@ -196,7 +232,13 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     marginTop: 8,
-    marginBottom: 24,
+    marginBottom: 12,
     paddingVertical: 8,
+  },
+  testButton: {
+    marginBottom: 24,
+  },
+  snackbar: {
+    backgroundColor: colors.primary,
   },
 }); 

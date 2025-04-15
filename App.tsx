@@ -8,6 +8,9 @@ import { RegisterScreen } from './src/screens/main/RegisterScreen';
 import { MainTabNavigator } from './src/navigation/MainTabNavigator';
 import { DrinkInputScreen } from './src/screens/main/DrinkInputScreen';
 import { colors } from './src/theme/colors';
+import { AppProvider } from './src/context/AppContext';
+import { LoadingOverlay } from './src/components/LoadingOverlay';
+import { useApp } from './src/context/AppContext';
 
 // Navigation types
 type RootStackParamList = {
@@ -40,10 +43,12 @@ const theme = {
   },
 };
 
-// Main App component
-export default function App() {
+// Navigation component
+const Navigation = () => {
+  const { isLoading, error } = useApp();
+
   return (
-    <PaperProvider theme={theme}>
+    <>
       <NavigationContainer>
         <Stack.Navigator 
           screenOptions={{
@@ -57,6 +62,18 @@ export default function App() {
           <Stack.Screen name="DrinkInput" component={DrinkInputScreen} />
         </Stack.Navigator>
       </NavigationContainer>
+      <LoadingOverlay visible={isLoading} message={error || 'Loading...'} />
+    </>
+  );
+};
+
+// Main App component
+export default function App() {
+  return (
+    <PaperProvider theme={theme}>
+      <AppProvider>
+        <Navigation />
+      </AppProvider>
     </PaperProvider>
   );
 } 

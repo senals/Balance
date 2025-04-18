@@ -53,6 +53,19 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
     console.log('View drink details');
   };
 
+  const handleEditDrink = (drinkId: string) => {
+    console.log('Editing drink with ID:', drinkId);
+    
+    // Check if the drink exists
+    const drinkExists = drinks.some(drink => drink.id === drinkId);
+    if (!drinkExists) {
+      console.error('Drink not found with ID:', drinkId);
+      return;
+    }
+    
+    navigation.navigate('EditDrink', { drinkId });
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -108,7 +121,7 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
                   <Text style={styles.summaryValue}>{monthlyConsumption}</Text>
                 </View>
                 <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Avg/Day</Text>
+                  <Text style={styles.summaryLabel}>Daily Avg</Text>
                   <Text style={styles.summaryValue}>
                     {(monthlyConsumption / (new Date().getDate())).toFixed(1)}
                   </Text>
@@ -133,8 +146,17 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
                 recentDrinks.map(drink => (
                   <View key={drink.id} style={styles.drinkItem}>
                     <View style={styles.drinkInfo}>
-                      <Text style={styles.drinkName}>{drink.drink}</Text>
+                      <Text style={styles.drinkDescription}>{drink.drink}</Text>
                       <Text style={styles.drinkDateTime}>{drink.date} {drink.time}</Text>
+                    </View>
+                    <View style={styles.drinkActions}>
+                      <IconButton
+                        icon="pencil"
+                        size={20}
+                        onPress={() => handleEditDrink(drink.id)}
+                        iconColor={colors.primary}
+                        style={styles.editButton}
+                      />
                     </View>
                   </View>
                 ))
@@ -259,55 +281,63 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   summaryContent: {
-    marginBottom: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
   summaryItem: {
-    marginBottom: 6,
+    alignItems: 'center',
   },
   summaryLabel: {
-    fontSize: 10,
+    fontSize: 12,
     color: colors.text,
     opacity: 0.7,
   },
   summaryValue: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: 'bold',
-    color: colors.primary,
+    color: colors.text,
   },
   detailsButton: {
-    marginTop: 4,
+    marginTop: 8,
   },
   drinkItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.background,
+    marginBottom: 8,
   },
   drinkInfo: {
     flex: 1,
   },
-  drinkName: {
+  drinkDescription: {
     fontSize: 14,
     fontWeight: 'bold',
     color: colors.text,
   },
   drinkDateTime: {
-    fontSize: 10,
+    fontSize: 12,
     color: colors.text,
     opacity: 0.7,
+  },
+  drinkActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  editButton: {
+    margin: 0,
+    padding: 0,
+  },
+  emptyMessage: {
+    fontSize: 14,
+    color: colors.text,
+    opacity: 0.7,
+    marginBottom: 12,
   },
   addButton: {
     marginTop: 8,
-  },
-  emptyMessage: {
-    textAlign: 'center',
-    color: colors.text,
-    opacity: 0.7,
-    marginBottom: 8,
   },
 }); 

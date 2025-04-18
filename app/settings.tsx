@@ -1,62 +1,10 @@
-import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import { Text, List, Switch, Button } from 'react-native-paper';
-import { useApp } from '../src/context/AppContext';
+import React from 'react';
+import { View, StyleSheet, ScrollView } from 'react-native';
+import { Text, List, Switch } from 'react-native-paper';
 
 export default function SettingsPage() {
-  const { 
-    isLoading, 
-    settings, 
-    updateSettings,
-    loadUserData
-  } = useApp();
-  
-  const [localSettings, setLocalSettings] = useState({
-    notifications: settings.notificationsEnabled,
-    darkMode: settings.darkModeEnabled,
-  });
-
-  // Update local settings when context settings change
-  useEffect(() => {
-    setLocalSettings({
-      notifications: settings.notificationsEnabled,
-      darkMode: settings.darkModeEnabled,
-    });
-  }, [settings]);
-
-  // Load user data if needed
-  useEffect(() => {
-    loadUserData();
-  }, []);
-
-  const handleToggleNotifications = async (value: boolean) => {
-    setLocalSettings(prev => ({ ...prev, notifications: value }));
-    try {
-      await updateSettings({ notificationsEnabled: value });
-    } catch (error) {
-      // Revert on error
-      setLocalSettings(prev => ({ ...prev, notifications: !value }));
-    }
-  };
-
-  const handleToggleDarkMode = async (value: boolean) => {
-    setLocalSettings(prev => ({ ...prev, darkMode: value }));
-    try {
-      await updateSettings({ darkModeEnabled: value });
-    } catch (error) {
-      // Revert on error
-      setLocalSettings(prev => ({ ...prev, darkMode: !value }));
-    }
-  };
-
-  if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Loading settings...</Text>
-      </View>
-    );
-  }
+  const [notifications, setNotifications] = React.useState(true);
+  const [darkMode, setDarkMode] = React.useState(false);
 
   return (
     <ScrollView style={styles.container}>
@@ -69,8 +17,8 @@ export default function SettingsPage() {
           description="Receive reminders and updates"
           right={() => (
             <Switch
-              value={localSettings.notifications}
-              onValueChange={handleToggleNotifications}
+              value={notifications}
+              onValueChange={setNotifications}
             />
           )}
         />
@@ -79,8 +27,8 @@ export default function SettingsPage() {
           description="Switch between light and dark theme"
           right={() => (
             <Switch
-              value={localSettings.darkMode}
-              onValueChange={handleToggleDarkMode}
+              value={darkMode}
+              onValueChange={setDarkMode}
             />
           )}
         />
@@ -109,17 +57,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
   },
   title: {
     marginTop: 20,

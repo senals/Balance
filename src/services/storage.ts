@@ -8,9 +8,6 @@ export const STORAGE_KEYS = {
   AUTH_TOKEN: 'auth_token',
   BUDGET: 'budget',
   PRE_GAME_PLANS: 'pre_game_plans',
-  DAILY_TRACKER: 'daily_tracker',
-  MONTHLY_TRACKER: 'monthly_tracker',
-  HISTORICAL_DATA: 'historical_data',
 } as const;
 
 // Types
@@ -31,9 +28,12 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
-  university: string;
-  yearOfStudy: string;
-  joinDate: string;
+  age: number;
+  weight: number;
+  height: number;
+  gender: 'male' | 'female' | 'other';
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface UserSettings {
@@ -67,37 +67,10 @@ export interface PreGamePlan {
   completed: boolean;
   createdAt: string;
   updatedAt: string;
-  // Tracking information
   actualDrinks?: number;
   actualSpending?: number;
-  adherencePercentage?: number;
-  drinksAdherencePercentage?: number;
-  spendingAdherencePercentage?: number;
-  trackedDrinks?: string[]; // IDs of drinks tracked during this event
-}
-
-export interface DailyTracker {
-  date: string; // Format: YYYY-MM-DD
-  drinks: number;
-  spending: number;
-  completed: boolean;
-  lastUpdated: string;
-}
-
-export interface MonthlyTracker {
-  year: number;
-  month: number; // 1-12
-  drinks: number;
-  spending: number;
-  daysWithinLimit: number;
-  totalDays: number;
-  completed: boolean;
-  lastUpdated: string;
-}
-
-export interface HistoricalData {
-  dailyRecords: DailyTracker[];
-  monthlyRecords: MonthlyTracker[];
+  adherenceStatus?: 'pending' | 'success' | 'exceeded';
+  adherenceNotes?: string;
 }
 
 // Error class for storage operations
@@ -108,13 +81,27 @@ export class StorageError extends Error {
   }
 }
 
+// Simple in-memory cache to reduce AsyncStorage calls
+const cache: Record<string, any> = {};
+
 // Generic storage operations with type safety
 export const storage = {
   async get<T>(key: string): Promise<T | null> {
     try {
+      // Check cache first
+      if (cache[key] !== undefined) {
+        return cache[key];
+      }
+      
       const data = await AsyncStorage.getItem(key);
-      return data ? JSON.parse(data) : null;
+      const parsedData = data ? JSON.parse(data) : null;
+      
+      // Update cache
+      cache[key] = parsedData;
+      
+      return parsedData;
     } catch (error) {
+      console.error(`Storage get error for key ${key}:`, error);
       throw new StorageError(
         `Failed to get item: ${error instanceof Error ? error.message : 'Unknown error'}`,
         'get',
@@ -126,7 +113,11 @@ export const storage = {
   async set<T>(key: string, value: T): Promise<void> {
     try {
       await AsyncStorage.setItem(key, JSON.stringify(value));
+      
+      // Update cache
+      cache[key] = value;
     } catch (error) {
+      console.error(`Storage set error for key ${key}:`, error);
       throw new StorageError(
         `Failed to set item: ${error instanceof Error ? error.message : 'Unknown error'}`,
         'set',
@@ -138,7 +129,11 @@ export const storage = {
   async remove(key: string): Promise<void> {
     try {
       await AsyncStorage.removeItem(key);
+      
+      // Update cache
+      delete cache[key];
     } catch (error) {
+      console.error(`Storage remove error for key ${key}:`, error);
       throw new StorageError(
         `Failed to remove item: ${error instanceof Error ? error.message : 'Unknown error'}`,
         'remove',
@@ -150,7 +145,11 @@ export const storage = {
   async clear(): Promise<void> {
     try {
       await AsyncStorage.clear();
+      
+      // Clear cache
+      Object.keys(cache).forEach(key => delete cache[key]);
     } catch (error) {
+      console.error('Storage clear error:', error);
       throw new StorageError(
         `Failed to clear storage: ${error instanceof Error ? error.message : 'Unknown error'}`,
         'clear'
@@ -242,10 +241,7 @@ export const storage = {
 
     async addExpense(expense: Omit<BudgetData['expenses'][0], 'id'>): Promise<BudgetData['expenses'][0]> {
       const budget = await this.get();
-      const newExpense = {
-        ...expense,
-        id: Date.now().toString(),
-      };
+      const newExpense = { ...expense, id: Date.now().toString() };
       budget.expenses.push(newExpense);
       await storage.set(STORAGE_KEYS.BUDGET, budget);
       return newExpense;
@@ -288,7 +284,7 @@ export const storage = {
       plans[index] = { 
         ...plans[index], 
         ...updates,
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       };
       await storage.set(STORAGE_KEYS.PRE_GAME_PLANS, plans);
       return plans[index];
@@ -298,154 +294,6 @@ export const storage = {
       const plans = await this.getAll();
       const filtered = plans.filter(p => p.id !== id);
       await storage.set(STORAGE_KEYS.PRE_GAME_PLANS, filtered);
-    },
-  },
-
-  dailyTracker: {
-    async getCurrent(): Promise<DailyTracker | null> {
-      const today = new Date().toISOString().split('T')[0];
-      const tracker = await storage.get<DailyTracker>(`${STORAGE_KEYS.DAILY_TRACKER}_${today}`);
-      return tracker;
-    },
-
-    async getOrCreateCurrent(): Promise<DailyTracker> {
-      const today = new Date().toISOString().split('T')[0];
-      const tracker = await this.getCurrent();
-      
-      if (tracker) {
-        return tracker;
-      }
-      
-      // Create a new tracker for today
-      const newTracker: DailyTracker = {
-        date: today,
-        drinks: 0,
-        spending: 0,
-        completed: false,
-        lastUpdated: new Date().toISOString(),
-      };
-      
-      await storage.set(`${STORAGE_KEYS.DAILY_TRACKER}_${today}`, newTracker);
-      return newTracker;
-    },
-
-    async updateCurrent(updates: Partial<DailyTracker>): Promise<DailyTracker> {
-      const today = new Date().toISOString().split('T')[0];
-      const current = await this.getOrCreateCurrent();
-      const updated = { ...current, ...updates, lastUpdated: new Date().toISOString() };
-      await storage.set(`${STORAGE_KEYS.DAILY_TRACKER}_${today}`, updated);
-      return updated;
-    },
-
-    async markAsCompleted(): Promise<DailyTracker> {
-      const today = new Date().toISOString().split('T')[0];
-      const current = await this.getOrCreateCurrent();
-      const updated = { ...current, completed: true, lastUpdated: new Date().toISOString() };
-      await storage.set(`${STORAGE_KEYS.DAILY_TRACKER}_${today}`, updated);
-      
-      // Also save to historical data
-      await this.saveToHistory(updated);
-      
-      return updated;
-    },
-
-    async saveToHistory(tracker: DailyTracker): Promise<void> {
-      const historicalData = await storage.historicalData.get();
-      const updatedRecords = [...historicalData.dailyRecords, tracker];
-      await storage.historicalData.update({ dailyRecords: updatedRecords });
-    },
-
-    async getForDate(date: string): Promise<DailyTracker | null> {
-      return storage.get<DailyTracker>(`${STORAGE_KEYS.DAILY_TRACKER}_${date}`);
-    },
-  },
-
-  monthlyTracker: {
-    async getCurrent(): Promise<MonthlyTracker | null> {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = now.getMonth() + 1; // 1-12
-      const key = `${STORAGE_KEYS.MONTHLY_TRACKER}_${year}_${month}`;
-      return storage.get<MonthlyTracker>(key);
-    },
-
-    async getOrCreateCurrent(): Promise<MonthlyTracker> {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = now.getMonth() + 1; // 1-12
-      const key = `${STORAGE_KEYS.MONTHLY_TRACKER}_${year}_${month}`;
-      const tracker = await storage.get<MonthlyTracker>(key);
-      
-      if (tracker) {
-        return tracker;
-      }
-      
-      // Create a new tracker for this month
-      const daysInMonth = new Date(year, month, 0).getDate();
-      const newTracker: MonthlyTracker = {
-        year,
-        month,
-        drinks: 0,
-        spending: 0,
-        daysWithinLimit: 0,
-        totalDays: daysInMonth,
-        completed: false,
-        lastUpdated: new Date().toISOString(),
-      };
-      
-      await storage.set(key, newTracker);
-      return newTracker;
-    },
-
-    async updateCurrent(updates: Partial<MonthlyTracker>): Promise<MonthlyTracker> {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = now.getMonth() + 1; // 1-12
-      const key = `${STORAGE_KEYS.MONTHLY_TRACKER}_${year}_${month}`;
-      const current = await this.getOrCreateCurrent();
-      const updated = { ...current, ...updates, lastUpdated: new Date().toISOString() };
-      await storage.set(key, updated);
-      return updated;
-    },
-
-    async markAsCompleted(): Promise<MonthlyTracker> {
-      const now = new Date();
-      const year = now.getFullYear();
-      const month = now.getMonth() + 1; // 1-12
-      const key = `${STORAGE_KEYS.MONTHLY_TRACKER}_${year}_${month}`;
-      const current = await this.getOrCreateCurrent();
-      const updated = { ...current, completed: true, lastUpdated: new Date().toISOString() };
-      await storage.set(key, updated);
-      
-      // Also save to historical data
-      await this.saveToHistory(updated);
-      
-      return updated;
-    },
-
-    async saveToHistory(tracker: MonthlyTracker): Promise<void> {
-      const historicalData = await storage.historicalData.get();
-      const updatedRecords = [...historicalData.monthlyRecords, tracker];
-      await storage.historicalData.update({ monthlyRecords: updatedRecords });
-    },
-
-    async getForMonth(year: number, month: number): Promise<MonthlyTracker | null> {
-      const key = `${STORAGE_KEYS.MONTHLY_TRACKER}_${year}_${month}`;
-      return storage.get<MonthlyTracker>(key);
-    },
-  },
-
-  historicalData: {
-    async get(): Promise<HistoricalData> {
-      const data = await storage.get<HistoricalData>(STORAGE_KEYS.HISTORICAL_DATA);
-      return data || { dailyRecords: [], monthlyRecords: [] };
-    },
-
-    async update(updates: Partial<HistoricalData>): Promise<HistoricalData> {
-      const current = await this.get();
-      const updated = { ...current, ...updates };
-      await storage.set(STORAGE_KEYS.HISTORICAL_DATA, updated);
-      return updated;
     },
   },
 }; 

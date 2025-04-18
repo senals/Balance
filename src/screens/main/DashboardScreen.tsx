@@ -1,44 +1,53 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, Card, Button, ProgressBar, SegmentedButtons } from 'react-native-paper';
+import { Text, Card, Button, ProgressBar } from 'react-native-paper';
 import { colors } from '../../theme/colors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../context/AppContext';
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from 'date-fns';
-import { QuickInputWidget } from '../../components/QuickInputWidget';
+import { format } from 'date-fns';
 
 export const DashboardScreen = ({ navigation }: { navigation: any }) => {
-  const { 
-    drinks, 
-    settings, 
-    budget, 
-    userProfile, 
-    error, 
-    preGamePlans,
-    dailyTracker,
-    monthlyTracker,
-    historicalData
-  } = useApp();
+  const { drinks, settings, budget, userProfile, error, preGamePlans } = useApp();
 
-  const [timeRange, setTimeRange] = useState('daily');
-  const [selectedDate, setSelectedDate] = useState(new Date());
-
-  // Use the daily tracker data if available
-  const dailyConsumption = dailyTracker?.drinks || 0;
-  const dailySpent = dailyTracker?.spending || 0;
+  // Calculate daily consumption
+  const today = new Date().toISOString().split('T')[0];
+  const dailyDrinks = drinks.filter(drink => 
+    drink.timestamp.startsWith(today)
+  );
+  const dailyConsumption = dailyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
   const dailyLimit = settings.dailyLimit;
   const dailyProgressPercentage = dailyConsumption / dailyLimit;
 
-  // Use the monthly tracker data if available
-  const monthlyConsumption = monthlyTracker?.drinks || 0;
-  const monthlySpent = monthlyTracker?.spending || 0;
+  // Calculate daily spending
+  const dailySpent = dailyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
+  const dailyBudget = budget.dailyBudget;
+  const dailyBudgetPercentage = dailySpent / dailyBudget;
+
+  // Calculate weekly consumption
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+  const weeklyDrinks = drinks.filter(drink => 
+    new Date(drink.timestamp) >= weekStart
+  );
+  const weeklyConsumption = weeklyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
+
+  // Calculate weekly spending
+  const weeklySpent = weeklyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
+  const weeklyBudget = budget.weeklyBudget;
+  const weeklyBudgetPercentage = weeklySpent / weeklyBudget;
+
+  // Calculate monthly consumption
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  const monthlyDrinks = drinks.filter(drink => 
+    new Date(drink.timestamp) >= monthStart
+  );
+  const monthlyConsumption = monthlyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
+
+  // Calculate monthly spending
+  const monthlySpent = monthlyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
   const monthlyBudget = budget.monthlyBudget;
   const monthlyBudgetPercentage = monthlySpent / monthlyBudget;
-  
-  // Calculate days within limit for the month
-  const daysWithinLimit = monthlyTracker?.daysWithinLimit || 0;
-  const totalDaysInMonth = monthlyTracker?.totalDays || 30;
-  const daysWithinLimitPercentage = daysWithinLimit / totalDaysInMonth;
 
   // Get recent drinks
   const recentDrinks = [...drinks]
@@ -57,7 +66,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
   const monthsCompleted = currentMonth - 1; // 0-11
   
   // Calculate success rate (percentage of months where user stayed within budget)
-  const successRate = calculateSuccessRate(historicalData.monthlyRecords, budget);
+  const successRate = calculateSuccessRate(drinks, budget);
   
   // Determine tree growth stage based on success rate
   const getTreeGrowthStage = () => {
@@ -90,73 +99,6 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     .slice(0, 3); // Show only the next 3 upcoming plans
 
-  // Get historical data for the selected time range
-  const getHistoricalData = () => {
-    if (timeRange === 'daily') {
-      // Get the last 7 days of data
-      const last7Days = historicalData.dailyRecords
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .slice(0, 7);
-      
-      return last7Days.map(day => ({
-        label: format(new Date(day.date), 'dd/MM'),
-        drinks: day.drinks,
-        spending: day.spending,
-        withinLimit: day.drinks <= settings.dailyLimit ? 1 : 0,
-      }));
-    } else if (timeRange === 'weekly') {
-      // Get the last 4 weeks of data
-      const last4Weeks = historicalData.dailyRecords
-        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        .slice(0, 28);
-      
-      // Group by week
-      const weeks: { [key: string]: { drinks: number, spending: number, days: number, withinLimit: number } } = {};
-      
-      last4Weeks.forEach(day => {
-        const date = new Date(day.date);
-        const weekStart = new Date(date);
-        weekStart.setDate(date.getDate() - date.getDay());
-        const weekKey = format(weekStart, 'yyyy-MM-dd');
-        
-        if (!weeks[weekKey]) {
-          weeks[weekKey] = { drinks: 0, spending: 0, days: 0, withinLimit: 0 };
-        }
-        
-        weeks[weekKey].drinks += day.drinks;
-        weeks[weekKey].spending += day.spending;
-        weeks[weekKey].days += 1;
-        if (day.drinks <= settings.dailyLimit) {
-          weeks[weekKey].withinLimit += 1;
-        }
-      });
-      
-      return Object.entries(weeks)
-        .sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime())
-        .slice(0, 4)
-        .map(([weekStart, data]) => ({
-          label: `Week ${format(new Date(weekStart), 'dd/MM')}`,
-          drinks: data.drinks,
-          spending: data.spending,
-          withinLimit: data.days > 0 ? data.withinLimit / data.days : 0,
-        }));
-    } else {
-      // Get the last 6 months of data
-      const last6Months = historicalData.monthlyRecords
-        .sort((a, b) => (b.year * 12 + b.month) - (a.year * 12 + a.month))
-        .slice(0, 6);
-      
-      return last6Months.map(month => ({
-        label: format(new Date(month.year, month.month - 1), 'MMM yyyy'),
-        drinks: month.drinks,
-        spending: month.spending,
-        withinLimit: month.daysWithinLimit / month.totalDays,
-      }));
-    }
-  };
-
-  const historicalDataPoints = getHistoricalData();
-
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
@@ -165,9 +107,6 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
       </View>
       
       <View style={styles.content}>
-        {/* Quick Input Widget */}
-        <QuickInputWidget />
-        
         {/* Long-term Progress Tree */}
         <Card style={styles.treeCard}>
           <Card.Content style={styles.treeContent}>
@@ -216,10 +155,10 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
               </View>
               <View style={styles.overviewItem}>
                 <Text style={styles.overviewLabel}>Spending</Text>
-                <Text style={styles.overviewValue}>£{dailySpent.toFixed(2)}/{budget.dailyBudget.toFixed(2)}</Text>
+                <Text style={styles.overviewValue}>${dailySpent.toFixed(2)}/${dailyBudget.toFixed(2)}</Text>
                 <ProgressBar 
-                  progress={dailySpent / budget.dailyBudget} 
-                  color={(dailySpent / budget.dailyBudget) > 0.8 ? colors.error : colors.primary} 
+                  progress={dailyBudgetPercentage} 
+                  color={dailyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
                   style={styles.progressBar} 
                 />
               </View>
@@ -227,77 +166,50 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
           </Card.Content>
         </Card>
         
-        {/* Historical Data */}
-        <Card style={styles.historicalCard}>
-          <Card.Content>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Historical Data</Text>
-              <SegmentedButtons
-                value={timeRange}
-                onValueChange={setTimeRange}
-                buttons={[
-                  { value: 'daily', label: 'Daily' },
-                  { value: 'weekly', label: 'Weekly' },
-                  { value: 'monthly', label: 'Monthly' },
-                ]}
-              />
-            </View>
-            
-            {historicalDataPoints.length > 0 ? (
-              <View style={styles.historicalDataContainer}>
-                {historicalDataPoints.map((point, index) => (
-                  <View key={index} style={styles.historicalDataPoint}>
-                    <Text style={styles.historicalLabel}>{point.label}</Text>
-                    <View style={styles.historicalDataRow}>
-                      <Text style={styles.historicalValue}>Drinks: {point.drinks}</Text>
-                      <Text style={styles.historicalValue}>£{point.spending.toFixed(2)}</Text>
-                    </View>
-                    <View style={styles.historicalProgressContainer}>
-                      <ProgressBar 
-                        progress={point.withinLimit} 
-                        color={point.withinLimit > 0.7 ? colors.primary : colors.error} 
-                        style={styles.historicalProgressBar} 
-                      />
-                      <Text style={styles.historicalProgressText}>
-                        {Math.round(point.withinLimit * 100)}% within limit
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <View style={styles.emptyHistoricalContainer}>
-                <Text style={styles.emptyMessage}>No historical data available yet</Text>
-              </View>
-            )}
-          </Card.Content>
-        </Card>
-        
-        {/* Monthly Summary */}
-        <Card style={styles.monthlyCard}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>Monthly Summary</Text>
-            <View style={styles.monthlyContent}>
-              <View style={styles.monthlyItem}>
-                <Text style={styles.monthlyLabel}>Total Drinks</Text>
-                <Text style={styles.monthlyValue}>{monthlyConsumption}</Text>
-              </View>
-              <View style={styles.monthlyItem}>
-                <Text style={styles.monthlyLabel}>Total Spending</Text>
-                <Text style={styles.monthlyValue}>£{monthlySpent.toFixed(2)}</Text>
-              </View>
-              <View style={styles.monthlyItem}>
-                <Text style={styles.monthlyLabel}>Days Within Limit</Text>
-                <Text style={styles.monthlyValue}>{daysWithinLimit}/{totalDaysInMonth}</Text>
+        {/* Weekly and Monthly Summary */}
+        <View style={styles.summaryRow}>
+          <Card style={styles.summaryCard}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>Weekly</Text>
+              <View style={styles.summaryContent}>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Drinks</Text>
+                  <Text style={styles.summaryValue}>{weeklyConsumption}</Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Spending</Text>
+                  <Text style={styles.summaryValue}>${weeklySpent.toFixed(2)}</Text>
+                </View>
                 <ProgressBar 
-                  progress={daysWithinLimitPercentage} 
-                  color={daysWithinLimitPercentage > 0.7 ? colors.primary : colors.error} 
+                  progress={weeklyBudgetPercentage} 
+                  color={weeklyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
                   style={styles.progressBar} 
                 />
               </View>
-            </View>
-          </Card.Content>
-        </Card>
+            </Card.Content>
+          </Card>
+          
+          <Card style={styles.summaryCard}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>Monthly</Text>
+              <View style={styles.summaryContent}>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Drinks</Text>
+                  <Text style={styles.summaryValue}>{monthlyConsumption}</Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Spending</Text>
+                  <Text style={styles.summaryValue}>${monthlySpent.toFixed(2)}</Text>
+                </View>
+                <ProgressBar 
+                  progress={monthlyBudgetPercentage} 
+                  color={monthlyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
+                  style={styles.progressBar} 
+                />
+              </View>
+            </Card.Content>
+          </Card>
+        </View>
         
         {/* Pre-Game Plans */}
         <Card style={styles.preGameCard}>
@@ -318,23 +230,23 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
                   <View style={styles.planHeader}>
                     <Text style={styles.planTitle}>{plan.title}</Text>
                     <Text style={styles.planDate}>
-                      {format(new Date(plan.date), 'dd-MM-yyyy')}
+                      {format(new Date(plan.date), 'MMM dd')}
                     </Text>
                   </View>
                   <Text style={styles.planLocation}>{plan.location}</Text>
                   <View style={styles.planLimits}>
                     <Text style={styles.planLimit}>Max Drinks: {plan.maxDrinks}</Text>
-                    <Text style={styles.planLimit}>Max Spending: £{plan.maxSpending.toFixed(2)}</Text>
+                    <Text style={styles.planLimit}>Max Spending: ${plan.maxSpending.toFixed(2)}</Text>
                   </View>
                 </View>
               ))
             ) : (
               <View style={styles.emptyPreGameContainer}>
-                <Text style={styles.emptyPreGameText}>No upcoming pre-game plans</Text>
+                <Text style={styles.emptyMessage}>No upcoming pre-game plans</Text>
                 <Button 
                   mode="contained" 
                   onPress={handleViewPreGamePlanner}
-                  style={styles.emptyButton}
+                  style={styles.createPlanButton}
                 >
                   Create a Plan
                 </Button>
@@ -342,47 +254,121 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
             )}
           </Card.Content>
         </Card>
+        
+        {/* Recent Activity */}
+        <Card style={styles.recentCard}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>Recent Activity</Text>
+            {recentDrinks.length > 0 ? (
+              recentDrinks.map(drink => (
+                <View key={drink.id} style={styles.activityItem}>
+                  <MaterialCommunityIcons 
+                    name="glass-cocktail" 
+                    size={24} 
+                    color={colors.primary} 
+                  />
+                  <View style={styles.activityInfo}>
+                    <Text style={styles.activityText}>{drink.drink}</Text>
+                    <Text style={styles.activityDateTime}>{drink.date} {drink.time}</Text>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyMessage}>No recent activity</Text>
+            )}
+          </Card.Content>
+        </Card>
+        
+        {/* Quick Actions */}
+        <View style={styles.actionsRow}>
+          <Button 
+            mode="contained" 
+            onPress={handleViewDrinkTracker}
+            style={styles.actionButton}
+            icon="glass-cocktail"
+          >
+            Drink Tracker
+          </Button>
+          <Button 
+            mode="contained" 
+            onPress={handleViewBudgetTracker}
+            style={styles.actionButton}
+            icon="cash"
+          >
+            Budget Tracker
+          </Button>
+        </View>
       </View>
     </ScrollView>
   );
 };
 
-// Helper function to calculate success rate
+// Helper function to calculate success rate based on budget adherence
 const calculateSuccessRate = (drinks: any[], budget: any) => {
-  // This is a simplified calculation - in a real app, you'd want to
-  // calculate this based on actual monthly data and budget adherence
-  const totalDrinks = drinks.length;
-  if (totalDrinks === 0) return 0.5; // Default to middle ground if no data
+  // Group drinks by month
+  const drinksByMonth: { [key: string]: any[] } = {};
   
-  // For demo purposes, we'll use a random value between 0.3 and 0.9
-  // In a real app, this would be calculated based on actual data
-  return 0.3 + Math.random() * 0.6;
+  drinks.forEach(drink => {
+    const date = new Date(drink.timestamp);
+    const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
+    
+    if (!drinksByMonth[monthKey]) {
+      drinksByMonth[monthKey] = [];
+    }
+    
+    drinksByMonth[monthKey].push(drink);
+  });
+  
+  // Calculate success for each month
+  let successfulMonths = 0;
+  let totalMonths = 0;
+  
+  Object.keys(drinksByMonth).forEach(monthKey => {
+    const monthDrinks = drinksByMonth[monthKey];
+    const monthSpent = monthDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
+    
+    // Consider a month successful if spending is within budget
+    if (monthSpent <= budget.monthlyBudget) {
+      successfulMonths++;
+    }
+    
+    totalMonths++;
+  });
+  
+  // If no months have passed yet, return a default value
+  if (totalMonths === 0) {
+    return 0.1; // Start with a small sprout
+  }
+  
+  return successfulMonths / totalMonths;
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.background,
   },
   header: {
-    padding: 16,
-    paddingTop: 24,
+    padding: 12,
+    paddingTop: 40,
   },
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
-    color: '#000',
+    color: colors.primary,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 4,
+    fontSize: 14,
+    color: colors.text,
+    opacity: 0.7,
   },
   content: {
-    padding: 16,
+    flex: 1,
+    padding: 12,
+    paddingBottom: 24,
   },
   treeCard: {
-    marginBottom: 16,
+    marginBottom: 12,
     backgroundColor: colors.surface,
     borderRadius: 12,
     elevation: 2,
@@ -390,19 +376,23 @@ const styles = StyleSheet.create({
   treeContent: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   treeContainer: {
-    alignItems: 'center',
+    position: 'relative',
+    width: 120,
+    height: 120,
     justifyContent: 'center',
-    width: '40%',
+    alignItems: 'center',
   },
   groundContainer: {
-    width: '100%',
-    height: 8,
+    position: 'absolute',
+    bottom: 0,
+    width: 120,
+    height: 10,
     backgroundColor: colors.background,
-    borderRadius: 4,
+    borderRadius: 5,
     overflow: 'hidden',
-    marginTop: 8,
   },
   groundFill: {
     height: '100%',
@@ -410,44 +400,46 @@ const styles = StyleSheet.create({
   },
   progressInfo: {
     flex: 1,
-    marginLeft: 16,
+    marginLeft: 12,
   },
   progressAmount: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: 'bold',
     color: colors.text,
   },
   progressLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: colors.text,
-    marginBottom: 8,
-  },
-  progressBar: {
-    height: 8,
-    borderRadius: 4,
-    marginBottom: 8,
+    opacity: 0.7,
+    marginBottom: 6,
   },
   successRate: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
     color: colors.primary,
-    marginBottom: 4,
+    marginTop: 4,
+  },
+  progressBar: {
+    height: 6,
+    borderRadius: 3,
+    marginBottom: 6,
   },
   remainingAmount: {
-    fontSize: 14,
+    fontSize: 12,
     color: colors.text,
+    opacity: 0.7,
   },
   overviewCard: {
-    marginBottom: 16,
+    marginBottom: 12,
     backgroundColor: colors.surface,
     borderRadius: 12,
     elevation: 2,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: colors.text,
-    marginBottom: 16,
+    marginBottom: 8,
   },
   overviewContent: {
     flexDirection: 'row',
@@ -458,78 +450,83 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   overviewLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: colors.text,
-    marginBottom: 4,
+    opacity: 0.7,
   },
   overviewValue: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 8,
+    color: colors.primary,
+    marginBottom: 4,
   },
-  historicalCard: {
-    margin: 16,
+  summaryRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
+  },
+  summaryCard: {
+    flex: 1,
+    marginHorizontal: 6,
+    backgroundColor: colors.surface,
     borderRadius: 12,
     elevation: 2,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  historicalDataContainer: {
-    marginTop: 16,
-  },
-  historicalDataPoint: {
-    marginBottom: 16,
-    padding: 12,
-    backgroundColor: colors.surface,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  historicalLabel: {
-    fontSize: 16,
-    fontWeight: 'bold',
+  summaryContent: {
     marginBottom: 8,
+  },
+  summaryItem: {
+    marginBottom: 6,
+  },
+  summaryLabel: {
+    fontSize: 10,
     color: colors.text,
+    opacity: 0.7,
   },
-  historicalDataRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  historicalValue: {
+  summaryValue: {
     fontSize: 14,
-    color: colors.text,
+    fontWeight: 'bold',
+    color: colors.primary,
   },
-  historicalProgressContainer: {
-    marginTop: 8,
+  recentCard: {
+    marginBottom: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    elevation: 2,
   },
-  historicalProgressBar: {
-    height: 8,
-    borderRadius: 4,
-  },
-  historicalProgressText: {
-    fontSize: 12,
-    color: colors.text,
-    marginTop: 4,
-    textAlign: 'right',
-  },
-  emptyHistoricalContainer: {
+  activityItem: {
+    flexDirection: 'row',
     alignItems: 'center',
-    padding: 24,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.background,
+  },
+  activityInfo: {
+    marginLeft: 12,
+    flex: 1,
+  },
+  activityText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  activityDateTime: {
+    fontSize: 10,
+    color: colors.text,
+    opacity: 0.7,
   },
   emptyMessage: {
-    fontSize: 16,
-    color: colors.text,
-    marginBottom: 16,
     textAlign: 'center',
+    color: colors.text,
+    opacity: 0.7,
+    marginVertical: 12,
   },
-  emptyButton: {
-    backgroundColor: colors.primary,
+  actionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  actionButton: {
+    flex: 1,
+    marginHorizontal: 6,
   },
   preGameCard: {
     marginBottom: 16,
@@ -537,8 +534,16 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     elevation: 2,
   },
-  planItem: {
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
+  },
+  planItem: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.background,
   },
   planHeader: {
     flexDirection: 'row',
@@ -549,11 +554,11 @@ const styles = StyleSheet.create({
   planTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    marginBottom: 4,
+    color: colors.text,
   },
   planDate: {
     fontSize: 14,
-    color: colors.text,
+    color: colors.primary,
   },
   planLocation: {
     fontSize: 14,
@@ -565,39 +570,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   planLimit: {
-    fontSize: 14,
+    fontSize: 12,
     color: colors.text,
-  },
-  monthlyCard: {
-    margin: 16,
-    borderRadius: 12,
-    elevation: 2,
-  },
-  monthlyContent: {
-    marginTop: 16,
-  },
-  monthlyItem: {
-    marginBottom: 16,
-  },
-  monthlyLabel: {
-    fontSize: 14,
-    color: colors.text,
-    marginBottom: 4,
-  },
-  monthlyValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 4,
   },
   emptyPreGameContainer: {
     alignItems: 'center',
-    padding: 24,
+    padding: 16,
   },
-  emptyPreGameText: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 16,
+  createPlanButton: {
+    marginTop: 8,
   },
 }); 

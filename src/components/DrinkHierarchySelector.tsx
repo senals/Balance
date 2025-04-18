@@ -3,9 +3,28 @@ import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Text, IconButton, Card } from 'react-native-paper';
 import { colors } from '../theme/colors';
 
+// Type definitions for drink hierarchy
+interface DrinkType {
+  name: string;
+  brands: string[];
+}
+
+interface DrinkCategory {
+  name: string;
+  icon: string;
+  alcoholContent: number;
+  types: {
+    [key: string]: DrinkType;
+  };
+}
+
+interface DrinkHierarchy {
+  [key: string]: DrinkCategory;
+}
+
 // Drink hierarchy data structure
 // In a real app, this would come from a database
-export const DRINK_HIERARCHY = {
+export const DRINK_HIERARCHY: DrinkHierarchy = {
   beer: {
     name: 'Beer',
     icon: '🍺',
@@ -130,12 +149,40 @@ type DrinkHierarchySelectorProps = {
     brand: string;
     alcoholContent: number;
   }) => void;
+  initialSelection?: {
+    category: string;
+    type: string;
+    brand: string;
+  };
 };
 
-export const DrinkHierarchySelector: React.FC<DrinkHierarchySelectorProps> = ({ onSelectDrink }) => {
+export const DrinkHierarchySelector: React.FC<DrinkHierarchySelectorProps> = ({ 
+  onSelectDrink,
+  initialSelection 
+}) => {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
+
+  // Handle initial selection
+  React.useEffect(() => {
+    if (initialSelection) {
+      const { category, type, brand } = initialSelection;
+      
+      // Validate that the selection exists in the hierarchy
+      if (category && DRINK_HIERARCHY[category]) {
+        setSelectedCategory(category);
+        
+        if (type && DRINK_HIERARCHY[category].types[type]) {
+          setSelectedType(type);
+          
+          if (brand && DRINK_HIERARCHY[category].types[type].brands.includes(brand)) {
+            setSelectedBrand(brand);
+          }
+        }
+      }
+    }
+  }, [initialSelection]);
 
   const handleCategorySelect = (category: string) => {
     setSelectedCategory(category);
@@ -199,6 +246,22 @@ export const DrinkHierarchySelector: React.FC<DrinkHierarchySelectorProps> = ({ 
       const category = DRINK_HIERARCHY[selectedCategory as keyof typeof DRINK_HIERARCHY];
       const type = category.types[selectedType as keyof typeof category.types];
       const brand = type.brands.find(b => b === selectedBrand);
+      
+      if (!brand) {
+        // Handle case when brand is not found
+        return (
+          <View style={styles.contentContainer}>
+            <Text style={styles.title}>Brand not found</Text>
+            <Text style={styles.subtitle}>Please select a different brand</Text>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={() => setSelectedBrand(null)}
+            >
+              <Text style={styles.optionText}>Go Back</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
       
       return (
         <View style={styles.contentContainer}>

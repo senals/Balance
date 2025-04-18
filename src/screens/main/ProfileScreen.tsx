@@ -47,6 +47,10 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
     // TODO: Navigate to help screen
     console.log('View help');
   };
+  
+  const handleOpenDevTools = () => {
+    navigation.navigate('DevTools');
+  };
 
   return (
     <View style={styles.container}>
@@ -156,6 +160,13 @@ export const ProfileScreen = ({ navigation }: { navigation: any }) => {
                     color={colors.primary}
                   />
                 )}
+              />
+              <Divider />
+              <List.Item
+                title="Development Tools"
+                description="Access development and debugging tools"
+                left={props => <List.Icon {...props} icon="tools" color={colors.primary} />}
+                onPress={handleOpenDevTools}
               />
             </List.Section>
             <Button 

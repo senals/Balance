@@ -1,10 +1,17 @@
 import React from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, Image } from 'react-native';
 import { Text, Card, Button, ProgressBar } from 'react-native-paper';
 import { colors } from '../../theme/colors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../context/AppContext';
 import { format } from 'date-fns';
+
+// Import plant growth images
+const PlantGrowth1 = require('../../assets/images/Plantgrowth1.png');
+const PlantGrowth2 = require('../../assets/images/Plantgrowth2.png');
+const PlantGrowth3 = require('../../assets/images/Plantgrowth3.png');
+const PlantGrowth4 = require('../../assets/images/Plantgrowth4.png');
+const PlantGrowth5 = require('../../assets/images/Plantgrowth5.png');
 
 export const DashboardScreen = ({ navigation }: { navigation: any }) => {
   const { drinks, settings, budget, userProfile, error, preGamePlans } = useApp();
@@ -68,13 +75,13 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
   // Calculate success rate (percentage of months where user stayed within budget)
   const successRate = calculateSuccessRate(drinks, budget);
   
-  // Determine tree growth stage based on success rate
-  const getTreeGrowthStage = () => {
-    if (successRate < 0.2) return 'sprout';
-    if (successRate < 0.4) return 'seedling';
-    if (successRate < 0.6) return 'sapling';
-    if (successRate < 0.8) return 'young-tree';
-    return 'mature-tree';
+  // Determine plant growth stage based on success rate
+  const getPlantGrowthImage = () => {
+    if (successRate < 0.2) return PlantGrowth1;
+    if (successRate < 0.4) return PlantGrowth2;
+    if (successRate < 0.6) return PlantGrowth3;
+    if (successRate < 0.8) return PlantGrowth4;
+    return PlantGrowth5;
   };
 
   const handleViewDrinkTracker = () => {
@@ -107,14 +114,14 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
       </View>
       
       <View style={styles.content}>
-        {/* Long-term Progress Tree */}
+        {/* Long-term Progress Plant */}
         <Card style={styles.treeCard}>
           <Card.Content style={styles.treeContent}>
             <View style={styles.treeContainer}>
-              <MaterialCommunityIcons 
-                name={getTreeGrowthStage() as any} 
-                size={120} 
-                color={colors.primary} 
+              <Image 
+                source={getPlantGrowthImage()} 
+                style={styles.plantImage}
+                resizeMode="contain"
               />
               <View style={styles.groundContainer}>
                 <View 
@@ -262,7 +269,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
             {recentDrinks.length > 0 ? (
               recentDrinks.map(drink => (
                 <View key={drink.id} style={styles.activityItem}>
-                  <MaterialCommunityIcons 
+                  <MaterialCommunityIcons
                     name="glass-cocktail" 
                     size={24} 
                     color={colors.primary} 
@@ -384,6 +391,10 @@ const styles = StyleSheet.create({
     height: 120,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  plantImage: {
+    width: 100,
+    height: 100,
   },
   groundContainer: {
     position: 'absolute',

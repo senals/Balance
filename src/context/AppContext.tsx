@@ -1,7 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { storage, DrinkEntry, UserProfile, UserSettings, BudgetData, PreGamePlan, StorageError } from '../services/storage';
+import { storage, DrinkEntry, UserProfile, UserSettings, BudgetData, PreGamePlan, StorageError, UserAccount } from '../services/storage';
 
 interface AppContextType {
+  // Authentication state
+  isAuthenticated: boolean;
+  currentUser: UserAccount | null;
+  
   // State
   isLoading: boolean;
   error: string | null;
@@ -11,6 +15,11 @@ interface AppContextType {
   budget: BudgetData;
   preGamePlans: PreGamePlan[];
 
+  // Auth actions
+  login: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, name: string) => Promise<void>;
+  logout: () => Promise<void>;
+  
   // Profile actions
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   
@@ -18,7 +27,7 @@ interface AppContextType {
   updateSettings: (updates: Partial<UserSettings>) => Promise<void>;
   
   // Drink actions
-  addDrink: (drink: Omit<DrinkEntry, 'id'>) => Promise<void>;
+  addDrink: (drink: Omit<DrinkEntry, 'id' | 'userId'>) => Promise<void>;
   updateDrink: (id: string, updates: Partial<DrinkEntry>) => Promise<void>;
   removeDrink: (id: string) => Promise<void>;
   
@@ -27,7 +36,7 @@ interface AppContextType {
   addExpense: (expense: Omit<BudgetData['expenses'][0], 'id'>) => Promise<void>;
 
   // Pre-game plan actions
-  addPreGamePlan: (plan: Omit<PreGamePlan, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  addPreGamePlan: (plan: Omit<PreGamePlan, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => Promise<void>;
   updatePreGamePlan: (id: string, updates: Partial<PreGamePlan>) => Promise<void>;
   removePreGamePlan: (id: string) => Promise<void>;
   
@@ -40,12 +49,15 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [settings, setSettings] = useState<UserSettings>({
     notificationsEnabled: true,
     darkModeEnabled: false,
     privacyModeEnabled: false,
     dailyLimit: 3,
+    userId: '',
   });
   const [drinks, setDrinks] = useState<DrinkEntry[]>([]);
   const [budget, setBudget] = useState<BudgetData>({
@@ -53,6 +65,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     weeklyBudget: 105,
     monthlyBudget: 450,
     expenses: [],
+    userId: '',
   });
   const [preGamePlans, setPreGamePlans] = useState<PreGamePlan[]>([]);
 
@@ -61,35 +74,125 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setError(null);
   }, []);
 
-  // Load initial data
+  // Check if user is already logged in
   useEffect(() => {
-    const loadData = async () => {
+    const checkAuth = async () => {
       try {
-        setIsLoading(true);
-        clearError();
-        
-        const [profileData, settingsData, drinksData, budgetData, preGamePlansData] = await Promise.all([
-          storage.profile.get(),
-          storage.settings.get(),
-          storage.drinks.getAll(),
-          storage.budget.get(),
-          storage.preGamePlans.getAll(),
-        ]);
-
-        setUserProfile(profileData);
-        setSettings(settingsData);
-        setDrinks(drinksData);
-        setBudget(budgetData);
-        setPreGamePlans(preGamePlansData);
+        const user = await storage.auth.getCurrentUser();
+        if (user) {
+          setCurrentUser(user);
+          setIsAuthenticated(true);
+          await loadUserData(user.id);
+        }
       } catch (error) {
-        setError(error instanceof StorageError ? error.message : 'Failed to load data');
-        console.error('Error loading data:', error);
+        console.error('Error checking authentication:', error);
       } finally {
         setIsLoading(false);
       }
     };
 
-    loadData();
+    checkAuth();
+  }, []);
+
+  // Load user data
+  const loadUserData = async (userId: string) => {
+    try {
+      setIsLoading(true);
+      clearError();
+      
+      const [profileData, settingsData, drinksData, budgetData, preGamePlansData] = await Promise.all([
+        storage.profile.get(userId),
+        storage.settings.get(userId),
+        storage.drinks.getAll(userId),
+        storage.budget.get(userId),
+        storage.preGamePlans.getAll(userId),
+      ]);
+
+      setUserProfile(profileData);
+      setSettings(settingsData);
+      setDrinks(drinksData);
+      setBudget(budgetData);
+      setPreGamePlans(preGamePlansData);
+    } catch (error) {
+      setError(error instanceof StorageError ? error.message : 'Failed to load data');
+      console.error('Error loading data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Auth actions
+  const login = useCallback(async (email: string, password: string) => {
+    try {
+      setIsLoading(true);
+      clearError();
+      
+      const user = await storage.auth.login(email, password);
+      setCurrentUser(user);
+      setIsAuthenticated(true);
+      await loadUserData(user.id);
+    } catch (error) {
+      const errorMessage = error instanceof StorageError ? error.message : 'Failed to login';
+      setError(errorMessage);
+      console.error('Error logging in:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clearError]);
+
+  const register = useCallback(async (email: string, password: string, name: string) => {
+    try {
+      setIsLoading(true);
+      clearError();
+      
+      const user = await storage.auth.register(email, password, name);
+      setCurrentUser(user);
+      setIsAuthenticated(true);
+      await loadUserData(user.id);
+    } catch (error) {
+      const errorMessage = error instanceof StorageError ? error.message : 'Failed to register';
+      setError(errorMessage);
+      console.error('Error registering:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clearError]);
+
+  const logout = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      clearError();
+      
+      await storage.auth.logout();
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      setUserProfile(null);
+      setSettings({
+        notificationsEnabled: true,
+        darkModeEnabled: false,
+        privacyModeEnabled: false,
+        dailyLimit: 3,
+        userId: '',
+      });
+      setDrinks([]);
+      setBudget({
+        dailyBudget: 15,
+        weeklyBudget: 105,
+        monthlyBudget: 450,
+        expenses: [],
+        userId: '',
+      });
+      setPreGamePlans([]);
+    } catch (error) {
+      const errorMessage = error instanceof StorageError ? error.message : 'Failed to logout';
+      setError(errorMessage);
+      console.error('Error logging out:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   }, [clearError]);
 
   // Profile actions
@@ -127,12 +230,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [clearError]);
 
   // Drink actions
-  const addDrink = useCallback(async (drink: Omit<DrinkEntry, 'id'>) => {
+  const addDrink = useCallback(async (drink: Omit<DrinkEntry, 'id' | 'userId'>) => {
     const tempId = Date.now().toString();
     try {
       clearError();
       // Optimistic update
-      const tempDrink = { ...drink, id: tempId };
+      const tempDrink = { ...drink, id: tempId, userId: currentUser?.id || '' };
       setDrinks(prev => [...prev, tempDrink]);
 
       const newDrink = await storage.drinks.add(drink);
@@ -147,16 +250,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       console.error('Error adding drink:', error);
       throw error;
     }
-  }, [clearError]);
+  }, [clearError, currentUser]);
 
   const updateDrink = useCallback(async (id: string, updates: Partial<DrinkEntry>) => {
-    const originalDrink = drinks.find(d => d.id === id);
-    if (!originalDrink) {
-      const error = new Error('Drink not found');
-      setError(error.message);
-      throw error;
-    }
-
     try {
       clearError();
       // Optimistic update
@@ -168,22 +264,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setDrinks(prev => prev.map(d => d.id === id ? updated : d));
     } catch (error) {
       // Rollback on error
-      setDrinks(prev => prev.map(d => d.id === id ? originalDrink : d));
+      setDrinks(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to update drink';
       setError(errorMessage);
       console.error('Error updating drink:', error);
       throw error;
     }
-  }, [drinks, clearError]);
+  }, [clearError]);
 
   const removeDrink = useCallback(async (id: string) => {
-    const drinkToRemove = drinks.find(d => d.id === id);
-    if (!drinkToRemove) {
-      const error = new Error('Drink not found');
-      setError(error.message);
-      throw error;
-    }
-
     try {
       clearError();
       // Optimistic update
@@ -192,13 +281,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await storage.drinks.remove(id);
     } catch (error) {
       // Rollback on error
-      setDrinks(prev => [...prev, drinkToRemove]);
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to remove drink';
       setError(errorMessage);
       console.error('Error removing drink:', error);
       throw error;
     }
-  }, [drinks, clearError]);
+  }, [clearError]);
 
   // Budget actions
   const updateBudget = useCallback(async (updates: Partial<Omit<BudgetData, 'expenses'>>) => {
@@ -251,7 +339,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [clearError]);
 
   // Pre-game plan actions
-  const addPreGamePlan = useCallback(async (plan: Omit<PreGamePlan, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const addPreGamePlan = useCallback(async (plan: Omit<PreGamePlan, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => {
     try {
       clearError();
       const newPlan = await storage.preGamePlans.add(plan);
@@ -292,6 +380,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Memoize the context value to prevent unnecessary re-renders
   const contextValue = useMemo(() => ({
+    // Auth state
+    isAuthenticated,
+    currentUser,
+    
     // State
     isLoading,
     error,
@@ -302,6 +394,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     preGamePlans,
 
     // Actions
+    login,
+    register,
+    logout,
     updateProfile,
     updateSettings,
     addDrink,
@@ -314,6 +409,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     removePreGamePlan,
     clearError,
   }), [
+    isAuthenticated,
+    currentUser,
     isLoading,
     error,
     userProfile,
@@ -321,6 +418,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     drinks,
     budget,
     preGamePlans,
+    login,
+    register,
+    logout,
     updateProfile,
     updateSettings,
     addDrink,

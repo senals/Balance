@@ -7,15 +7,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { BudgetTrackerScreen } from '../screens/main/BudgetTrackerScreen';
 import { ProfileScreen } from '../screens/main/ProfileScreen';
 import { PreGamePlannerScreen } from '../screens/main/PreGamePlannerScreen';
-
-// Define the tab navigator param list
-export type MainTabParamList = {
-  Dashboard: undefined;
-  DrinkTracker: undefined;
-  BudgetTracker: undefined;
-  PreGamePlanner: undefined;
-  Profile: undefined;
-};
+import { MainTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -31,6 +23,11 @@ export const MainTabNavigator = () => {
           borderTopColor: colors.primary,
           paddingBottom: 5,
           paddingTop: 5,
+          elevation: 8,
+          shadowColor: colors.text,
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
         },
         tabBarLabelStyle: {
           fontSize: 12,

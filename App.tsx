@@ -1,7 +1,11 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { PaperProvider, MD3LightTheme } from 'react-native-paper';
+import { createStackNavigator } from '@react-navigation/stack';
+import { Provider as PaperProvider, MD3LightTheme } from 'react-native-paper';
+import { AppProvider } from './src/context/AppContext';
+import { colors } from './src/theme/colors';
+
+// Import screens
 import { HomeScreen } from './src/screens/main/HomeScreen';
 import { LoginScreen } from './src/screens/main/LoginScreen';
 import { RegisterScreen } from './src/screens/main/RegisterScreen';
@@ -9,87 +13,58 @@ import { MainTabNavigator } from './src/navigation/MainTabNavigator';
 import { DrinkInputScreen } from './src/screens/main/DrinkInputScreen';
 import { EditDrinkScreen } from './src/screens/main/EditDrinkScreen';
 import { DevToolsScreen } from './src/screens/main/DevToolsScreen';
-import { colors } from './src/theme/colors';
-import { AppProvider } from './src/context/AppContext';
-import { LoadingOverlay } from './src/components/LoadingOverlay';
-import { useApp } from './src/context/AppContext';
+import { PreGamePlannerScreen } from './src/screens/main/PreGamePlannerScreen';
 
-// Navigation types
-type RootStackParamList = {
-  Home: undefined;
-  Login: undefined;
-  Register: undefined;
-  Main: undefined;
-  DrinkInput: undefined;
-  EditDrink: { drinkId: string };
-  DevTools: undefined;
-};
+// Import navigation types
+import { RootStackParamList } from './src/navigation/types';
 
-const Stack = createNativeStackNavigator<RootStackParamList>();
+const Stack = createStackNavigator<RootStackParamList>();
 
-// Create a proper theme object
+// Create theme object from colors
 const theme = {
   ...MD3LightTheme,
   colors: {
     ...MD3LightTheme.colors,
     primary: colors.primary,
     secondary: colors.secondary,
-    tertiary: colors.tertiary,
+    error: colors.error,
     background: colors.background,
     surface: colors.surface,
-    error: colors.error,
-    onPrimary: colors.surface,
-    onSecondary: colors.surface,
-    onTertiary: colors.surface,
-    onBackground: colors.text,
-    onSurface: colors.text,
-    onError: colors.surface,
+    text: colors.text,
   },
 };
 
-// Navigation component
-const Navigation = () => {
-  const { isLoading, error } = useApp();
-
-  return (
-    <>
-      <NavigationContainer
-        fallback={<LoadingOverlay visible={true} message="Loading navigation..." />}
-        onStateChange={(state) => {
-          console.log('Navigation state changed:', state);
-        }}
-      >
-        <Stack.Navigator 
-          screenOptions={{
-            headerShown: false
-          }}
-        >
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Register" component={RegisterScreen} />
-          <Stack.Screen name="Main" component={MainTabNavigator} />
-          <Stack.Screen name="DrinkInput" component={DrinkInputScreen} />
-          <Stack.Screen 
-            name="EditDrink" 
-            component={EditDrinkScreen}
-            options={{
-              animation: 'slide_from_right',
-            }}
-          />
-          <Stack.Screen name="DevTools" component={DevToolsScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
-      <LoadingOverlay visible={isLoading} message={error || 'Loading...'} />
-    </>
-  );
-};
-
-// Main App component
 export default function App() {
   return (
     <PaperProvider theme={theme}>
       <AppProvider>
-        <Navigation />
+        <NavigationContainer>
+          <Stack.Navigator
+            initialRouteName="Home"
+            screenOptions={{
+              headerStyle: {
+                backgroundColor: colors.primary,
+              },
+              headerTintColor: colors.button,
+              headerTitleStyle: {
+                fontWeight: 'bold',
+              },
+            }}
+          >
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Login" component={LoginScreen} />
+            <Stack.Screen name="Register" component={RegisterScreen} />
+            <Stack.Screen 
+              name="Main" 
+              component={MainTabNavigator}
+              options={{ headerShown: false }}
+            />
+            <Stack.Screen name="DrinkInput" component={DrinkInputScreen} />
+            <Stack.Screen name="EditDrink" component={EditDrinkScreen} />
+            <Stack.Screen name="DevTools" component={DevToolsScreen} />
+            <Stack.Screen name="PreGamePlanner" component={PreGamePlannerScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
       </AppProvider>
     </PaperProvider>
   );

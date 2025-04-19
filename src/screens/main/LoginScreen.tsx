@@ -1,139 +1,134 @@
-import React, { useState, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
-import { Text, TextInput, Button, Card, HelperText } from 'react-native-paper';
-import { colors } from '../../theme/colors';
+import React, { useState } from 'react';
+import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { TextInput, Button, Text, useTheme } from 'react-native-paper';
+import { useApp } from '../../context/AppContext';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../../navigation/types';
 
-export const LoginScreen = ({ navigation }: { navigation: any }) => {
+type LoginScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
+
+export const LoginScreen: React.FC = () => {
+  const theme = useTheme();
+  const navigation = useNavigation<LoginScreenNavigationProp>();
+  const { login, register, isLoading, error, clearError } = useApp();
+  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState({
-    email: '',
-    password: '',
-    general: ''
-  });
+  const [name, setName] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const validateForm = useCallback(() => {
-    const newErrors = {
-      email: '',
-      password: '',
-      general: ''
-    };
-    
-    let isValid = true;
-    
-    // Email validation
-    if (!email) {
-      newErrors.email = 'Email is required';
-      isValid = false;
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = 'Please enter a valid email address';
-      isValid = false;
+  const validateForm = () => {
+    if (!email || !password) {
+      setFormError('Please fill in all required fields');
+      return false;
     }
-    
-    // Password validation
-    if (!password) {
-      newErrors.password = 'Password is required';
-      isValid = false;
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
-      isValid = false;
+    if (isRegistering && !name) {
+      setFormError('Please enter your name');
+      return false;
     }
-    
-    setErrors(newErrors);
-    return isValid;
-  }, [email, password]);
+    if (password.length < 6) {
+      setFormError('Password must be at least 6 characters long');
+      return false;
+    }
+    if (!email.includes('@')) {
+      setFormError('Please enter a valid email address');
+      return false;
+    }
+    return true;
+  };
 
-  const handleLogin = useCallback(() => {
+  const handleSubmit = async () => {
     if (!validateForm()) return;
     
-    setIsLoading(true);
-    setErrors(prev => ({ ...prev, general: '' }));
-    
-    // Simulate login process
-    setTimeout(() => {
-      setIsLoading(false);
-      navigation.navigate('Main');
-    }, 1000);
-  }, [validateForm, navigation]);
+    try {
+      if (isRegistering) {
+        await register(email, password, name);
+      } else {
+        await login(email, password);
+      }
+      navigation.replace('Main');
+    } catch (error) {
+      // Error is already handled by the AppContext
+      console.error('Authentication error:', error);
+    }
+  };
+
+  const toggleMode = () => {
+    setIsRegistering(!isRegistering);
+    setFormError(null);
+    clearError();
+  };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Welcome Back</Text>
-          <Text style={styles.subtitle}>Sign in to continue</Text>
-        </View>
+        <View style={styles.formContainer}>
+          <Text variant="headlineMedium" style={styles.title}>
+            {isRegistering ? 'Create Account' : 'Welcome Back'}
+          </Text>
+          
+          {(error || formError) && (
+            <Text style={[styles.errorText, { color: theme.colors.error }]}>
+              {formError || error}
+            </Text>
+          )}
 
-        <Card style={styles.card}>
-          <Card.Content>
-            {errors.general ? (
-              <HelperText type="error" visible={true}>
-                {errors.general}
-              </HelperText>
-            ) : null}
-            
+          {isRegistering && (
             <TextInput
-              label="Email"
-              value={email}
-              onChangeText={(text) => {
-                setEmail(text);
-                setErrors(prev => ({ ...prev, email: '' }));
-              }}
+              label="Name"
+              value={name}
+              onChangeText={setName}
               style={styles.input}
-              mode="outlined"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              error={!!errors.email}
+              autoCapitalize="words"
               disabled={isLoading}
             />
-            {errors.email ? (
-              <HelperText type="error" visible={true}>
-                {errors.email}
-              </HelperText>
-            ) : null}
-            
-            <TextInput
-              label="Password"
-              value={password}
-              onChangeText={(text) => {
-                setPassword(text);
-                setErrors(prev => ({ ...prev, password: '' }));
-              }}
-              secureTextEntry
-              style={styles.input}
-              mode="outlined"
-              error={!!errors.password}
-              disabled={isLoading}
-            />
-            {errors.password ? (
-              <HelperText type="error" visible={true}>
-                {errors.password}
-              </HelperText>
-            ) : null}
-            
-            <Button
-              mode="contained"
-              onPress={handleLogin}
-              style={styles.button}
-              loading={isLoading}
-              disabled={isLoading}
-            >
-              Login
-            </Button>
-            <Button
-              mode="text"
-              onPress={() => navigation.navigate('Register')}
-              style={styles.linkButton}
-              disabled={isLoading}
-            >
-              Don't have an account? Register
-            </Button>
-          </Card.Content>
-        </Card>
+          )}
+
+          <TextInput
+            label="Email"
+            value={email}
+            onChangeText={setEmail}
+            style={styles.input}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            disabled={isLoading}
+          />
+
+          <TextInput
+            label="Password"
+            value={password}
+            onChangeText={setPassword}
+            style={styles.input}
+            secureTextEntry
+            disabled={isLoading}
+          />
+
+          <Button
+            mode="contained"
+            onPress={handleSubmit}
+            style={styles.button}
+            loading={isLoading}
+            disabled={isLoading}
+          >
+            {isRegistering ? 'Register' : 'Login'}
+          </Button>
+
+          <Button
+            mode="text"
+            onPress={toggleMode}
+            style={styles.switchButton}
+            disabled={isLoading}
+          >
+            {isRegistering
+              ? 'Already have an account? Login'
+              : "Don't have an account? Register"}
+          </Button>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -142,40 +137,29 @@ export const LoginScreen = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   scrollContent: {
     flexGrow: 1,
+    justifyContent: 'center',
   },
-  header: {
+  formContainer: {
     padding: 20,
-    paddingTop: 60,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: colors.primary,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: colors.text,
-    opacity: 0.7,
-    marginTop: 5,
-  },
-  card: {
-    margin: 20,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    elevation: 2,
+    textAlign: 'center',
+    marginBottom: 24,
   },
   input: {
-    marginBottom: 4,
+    marginBottom: 16,
   },
   button: {
-    marginTop: 16,
-    paddingVertical: 6,
+    marginTop: 8,
   },
-  linkButton: {
+  switchButton: {
     marginTop: 16,
+  },
+  errorText: {
+    textAlign: 'center',
+    marginBottom: 16,
   },
 }); 

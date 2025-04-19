@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { storage, DrinkEntry, UserProfile, UserSettings, BudgetData, PreGamePlan, StorageError, UserAccount, STORAGE_KEYS } from '../services/storage';
+import { lightTheme, darkTheme } from '../theme/theme';
 
 interface AppContextType {
   // Authentication state
@@ -14,11 +15,13 @@ interface AppContextType {
   drinks: DrinkEntry[];
   budget: BudgetData;
   preGamePlans: PreGamePlan[];
+  theme: typeof lightTheme;
 
   // Auth actions
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   
   // Profile actions
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
@@ -68,6 +71,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     userId: '',
   });
   const [preGamePlans, setPreGamePlans] = useState<PreGamePlan[]>([]);
+
+  // Theme state
+  const theme = useMemo(() => settings.darkModeEnabled ? darkTheme : lightTheme, [settings.darkModeEnabled]);
 
   // Clear error function
   const clearError = useCallback(() => {
@@ -196,6 +202,63 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to logout';
       setError(errorMessage);
       console.error('Error logging out:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clearError]);
+
+  const deleteAccount = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      clearError();
+      
+      const currentUser = await storage.auth.getCurrentUser();
+      if (!currentUser) {
+        throw new StorageError('User not authenticated', 'delete', 'account');
+      }
+
+      // Delete all user data
+      await Promise.all([
+        storage.remove(storage.getUserKey(STORAGE_KEYS.USER_PROFILE, currentUser.id)),
+        storage.remove(storage.getUserKey(STORAGE_KEYS.SETTINGS, currentUser.id)),
+        storage.remove(storage.getUserKey(STORAGE_KEYS.DRINKS, currentUser.id)),
+        storage.remove(storage.getUserKey(STORAGE_KEYS.BUDGET, currentUser.id)),
+        storage.remove(storage.getUserKey(STORAGE_KEYS.PRE_GAME_PLANS, currentUser.id)),
+      ]);
+
+      // Remove user from users list
+      const users = await storage.get<UserAccount[]>(STORAGE_KEYS.USERS) || [];
+      const updatedUsers = users.filter(u => u.id !== currentUser.id);
+      await storage.set(STORAGE_KEYS.USERS, updatedUsers);
+
+      // Clear auth token
+      await storage.remove(STORAGE_KEYS.AUTH_TOKEN);
+      
+      // Clear all state
+      setCurrentUser(null);
+      setIsAuthenticated(false);
+      setUserProfile(null);
+      setSettings({
+        notificationsEnabled: true,
+        darkModeEnabled: false,
+        privacyModeEnabled: false,
+        dailyLimit: 3,
+        userId: '',
+      });
+      setDrinks([]);
+      setBudget({
+        dailyBudget: 15,
+        weeklyBudget: 105,
+        monthlyBudget: 450,
+        expenses: [],
+        userId: '',
+      });
+      setPreGamePlans([]);
+    } catch (error) {
+      const errorMessage = error instanceof StorageError ? error.message : 'Failed to delete account';
+      setError(errorMessage);
+      console.error('Error deleting account:', error);
       throw error;
     } finally {
       setIsLoading(false);
@@ -399,11 +462,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     drinks,
     budget,
     preGamePlans,
+    theme,
 
     // Actions
     login,
     register,
     logout,
+    deleteAccount,
     updateProfile,
     updateSettings,
     addDrink,
@@ -425,9 +490,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     drinks,
     budget,
     preGamePlans,
+    theme,
     login,
     register,
     logout,
+    deleteAccount,
     updateProfile,
     updateSettings,
     addDrink,

@@ -30,10 +30,14 @@ export interface UserProfile {
   id: string;
   name: string;
   email: string;
-  age: number;
-  weight: number;
-  height: number;
-  gender: 'male' | 'female' | 'other';
+  age?: number;
+  weight?: number;
+  height?: number;
+  gender?: 'male' | 'female' | 'other';
+  university?: string;
+  preferredDrinks?: string[];
+  favoriteVenues?: string[];
+  drinkingGoals?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -263,6 +267,21 @@ export const storage = {
       const users = await storage.get<UserAccount[]>(STORAGE_KEYS.USERS) || [];
       return users.find(u => u.id === userId) || null;
     },
+
+    async resetPassword(email: string, newPassword: string): Promise<void> {
+      const users = await storage.get<UserAccount[]>(STORAGE_KEYS.USERS) || [];
+      const userIndex = users.findIndex(u => u.email === email);
+      
+      if (userIndex === -1) {
+        throw new StorageError('User not found', 'resetPassword');
+      }
+      
+      // Update password
+      users[userIndex].password = newPassword;
+      users[userIndex].updatedAt = new Date().toISOString();
+      
+      await storage.set(STORAGE_KEYS.USERS, users);
+    }
   },
 
   // Specialized methods for our app

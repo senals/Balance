@@ -103,7 +103,7 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
               }}
             />
             <TextInput
-              label="Price ($)"
+              label="Price (£)"
               value={price}
               onChangeText={setPrice}
               keyboardType="numeric"

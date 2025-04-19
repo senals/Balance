@@ -68,11 +68,20 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
     }));
 
   // Calculate long-term progress
-  const totalMonths = 12; // Assuming a 12-month goal period
-  const currentMonth = new Date().getMonth() + 1; // 1-12
-  const monthsCompleted = currentMonth - 1; // 0-11
+  const totalWeeks = 4; // 4-week goal period
   
-  // Calculate success rate (percentage of months where user stayed within budget)
+  // Calculate weeks completed based on actual user data
+  const weeksCompleted = drinks.length > 0 
+    ? Math.min(
+        Math.floor(
+          (new Date().getTime() - new Date(Math.min(...drinks.map(d => new Date(d.timestamp).getTime()))).getTime()) 
+          / (1000 * 60 * 60 * 24 * 7) // Convert to weeks
+        ) % 4, // Use modulo 4 to cycle through 4-week periods
+        totalWeeks
+      )
+    : 0;
+  
+  // Calculate success rate (percentage of weeks where user stayed within budget)
   const successRate = calculateSuccessRate(drinks, budget);
   
   // Determine plant growth stage based on success rate
@@ -133,15 +142,15 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
               </View>
             </View>
             <View style={styles.progressInfo}>
-              <Text style={styles.progressAmount}>{monthsCompleted}/{totalMonths}</Text>
-              <Text style={styles.progressLabel}>Months Completed</Text>
+              <Text style={styles.progressAmount}>{weeksCompleted}/{totalWeeks}</Text>
+              <Text style={styles.progressLabel}>Weeks Completed</Text>
               <ProgressBar 
-                progress={monthsCompleted / totalMonths} 
+                progress={weeksCompleted / totalWeeks} 
                 color={colors.primary} 
                 style={styles.progressBar} 
               />
               <Text style={styles.successRate}>Success Rate: {Math.round(successRate * 100)}%</Text>
-              <Text style={styles.remainingAmount}>{totalMonths - monthsCompleted} months remaining</Text>
+              <Text style={styles.remainingAmount}>{totalWeeks - weeksCompleted} weeks remaining</Text>
             </View>
           </Card.Content>
         </Card>
@@ -185,7 +194,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
                 </View>
                 <View style={styles.summaryItem}>
                   <Text style={styles.summaryLabel}>Spending</Text>
-                  <Text style={styles.summaryValue}>${weeklySpent.toFixed(2)}</Text>
+                  <Text style={styles.summaryValue}>£{weeklySpent.toFixed(2)}</Text>
                 </View>
                 <ProgressBar 
                   progress={weeklyBudgetPercentage} 
@@ -206,7 +215,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
                 </View>
                 <View style={styles.summaryItem}>
                   <Text style={styles.summaryLabel}>Spending</Text>
-                  <Text style={styles.summaryValue}>${monthlySpent.toFixed(2)}</Text>
+                  <Text style={styles.summaryValue}>£{monthlySpent.toFixed(2)}</Text>
                 </View>
                 <ProgressBar 
                   progress={monthlyBudgetPercentage} 
@@ -312,42 +321,69 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
 
 // Helper function to calculate success rate based on budget adherence
 const calculateSuccessRate = (drinks: any[], budget: any) => {
-  // Group drinks by month
-  const drinksByMonth: { [key: string]: any[] } = {};
+  // If no drinks yet, return 0 for a new user
+  if (!drinks || drinks.length === 0) {
+    return 0;
+  }
+
+  // Get the user's start date (first drink)
+  const startDate = new Date(Math.min(...drinks.map(d => new Date(d.timestamp).getTime())));
+  const currentDate = new Date();
+  
+  // Group drinks by week from start date to current date
+  const drinksByWeek: { [key: string]: any[] } = {};
   
   drinks.forEach(drink => {
     const date = new Date(drink.timestamp);
-    const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
+    const weekNumber = getWeekNumber(date);
+    const weekKey = `${date.getFullYear()}-${weekNumber}`;
     
-    if (!drinksByMonth[monthKey]) {
-      drinksByMonth[monthKey] = [];
+    if (!drinksByWeek[weekKey]) {
+      drinksByWeek[weekKey] = [];
     }
     
-    drinksByMonth[monthKey].push(drink);
+    drinksByWeek[weekKey].push(drink);
   });
   
-  // Calculate success for each month
-  let successfulMonths = 0;
-  let totalMonths = 0;
+  // Calculate success for each week in the current 4-week period
+  let successfulWeeks = 0;
+  let weeksInPeriod = 0;
   
-  Object.keys(drinksByMonth).forEach(monthKey => {
-    const monthDrinks = drinksByMonth[monthKey];
-    const monthSpent = monthDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
+  // Get the start of the current 4-week period
+  const currentWeekStart = new Date(currentDate);
+  currentWeekStart.setDate(currentDate.getDate() - (currentDate.getDay() + 6) % 7); // Start of current week
+  currentWeekStart.setDate(currentWeekStart.getDate() - (3 * 7)); // Go back 3 weeks to get start of 4-week period
+  
+  // Iterate through weeks in the current 4-week period
+  let currentWeek = new Date(currentWeekStart);
+  while (currentWeek <= currentDate) {
+    const weekNumber = getWeekNumber(currentWeek);
+    const weekKey = `${currentWeek.getFullYear()}-${weekNumber}`;
+    const weekDrinks = drinksByWeek[weekKey] || [];
+    const weekSpent = weekDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
     
-    // Consider a month successful if spending is within budget
-    if (monthSpent <= budget.monthlyBudget) {
-      successfulMonths++;
+    // Consider a week successful if spending is within budget
+    if (weekSpent <= budget.weeklyBudget) {
+      successfulWeeks++;
     }
     
-    totalMonths++;
-  });
-  
-  // If no months have passed yet, return a default value
-  if (totalMonths === 0) {
-    return 0.1; // Start with a small sprout
+    weeksInPeriod++;
+    currentWeek.setDate(currentWeek.getDate() + 7); // Move to next week
   }
   
-  return successfulMonths / totalMonths;
+  // If no weeks have passed yet, return 0
+  if (weeksInPeriod === 0) {
+    return 0;
+  }
+  
+  return successfulWeeks / weeksInPeriod;
+};
+
+// Helper function to get week number
+const getWeekNumber = (date: Date): number => {
+  const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+  const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+  return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
 };
 
 const styles = StyleSheet.create({

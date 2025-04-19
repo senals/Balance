@@ -84,14 +84,14 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
               </View>
             </View>
             <View style={styles.budgetInfo}>
-              <Text style={styles.budgetAmount}>${dailySpent.toFixed(2)}/${dailyBudget.toFixed(2)}</Text>
+              <Text style={styles.budgetAmount}>£{dailySpent.toFixed(2)}/{dailyBudget.toFixed(2)}</Text>
               <Text style={styles.budgetLabel}>Daily Budget</Text>
               <ProgressBar 
                 progress={progressPercentage} 
                 color={progressPercentage > 0.8 ? colors.error : colors.primary} 
                 style={styles.progressBar} 
               />
-              <Text style={styles.remainingAmount}>${(dailyBudget - dailySpent).toFixed(2)} remaining</Text>
+              <Text style={styles.remainingAmount}>£{(dailyBudget - dailySpent).toFixed(2)} remaining</Text>
             </View>
           </Card.Content>
         </Card>
@@ -105,16 +105,16 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
               <View style={styles.summaryContent}>
                 <View style={styles.summaryItem}>
                   <Text style={styles.summaryLabel}>Weekly</Text>
-                  <Text style={styles.summaryValue}>${weeklySpent.toFixed(2)}</Text>
+                  <Text style={styles.summaryValue}>£{weeklySpent.toFixed(2)}</Text>
                 </View>
                 <View style={styles.summaryItem}>
                   <Text style={styles.summaryLabel}>Monthly</Text>
-                  <Text style={styles.summaryValue}>${monthlySpent.toFixed(2)}</Text>
+                  <Text style={styles.summaryValue}>£{monthlySpent.toFixed(2)}</Text>
                 </View>
                 <View style={styles.summaryItem}>
                   <Text style={styles.summaryLabel}>Daily Avg</Text>
                   <Text style={styles.summaryValue}>
-                    ${(monthlySpent / (new Date().getDate())).toFixed(2)}
+                    £{(monthlySpent / (new Date().getDate())).toFixed(2)}
                   </Text>
                 </View>
               </View>
@@ -140,7 +140,7 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
                       <Text style={styles.expenseDescription}>{expense.description}</Text>
                       <Text style={styles.expenseDateTime}>{expense.date} {expense.time}</Text>
                     </View>
-                    <Text style={styles.expenseAmount}>${expense.amount.toFixed(2)}</Text>
+                    <Text style={styles.expenseAmount}>£{expense.amount.toFixed(2)}</Text>
                   </View>
                 ))
               ) : (

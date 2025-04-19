@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { storage, DrinkEntry, UserProfile, UserSettings, BudgetData, PreGamePlan, StorageError, UserAccount } from '../services/storage';
+import { storage, DrinkEntry, UserProfile, UserSettings, BudgetData, PreGamePlan, StorageError, UserAccount, STORAGE_KEYS } from '../services/storage';
 
 interface AppContextType {
   // Authentication state
@@ -130,6 +130,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const user = await storage.auth.login(email, password);
       setCurrentUser(user);
       setIsAuthenticated(true);
+      
+      // Load user data
       await loadUserData(user.id);
     } catch (error) {
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to login';
@@ -139,7 +141,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } finally {
       setIsLoading(false);
     }
-  }, [clearError]);
+  }, [loadUserData, clearError]);
 
   const register = useCallback(async (email: string, password: string, name: string) => {
     try {
@@ -166,6 +168,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearError();
       
       await storage.auth.logout();
+      
+      // Clear all state
       setCurrentUser(null);
       setIsAuthenticated(false);
       setUserProfile(null);
@@ -185,6 +189,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         userId: '',
       });
       setPreGamePlans([]);
+      
+      // Clear only the auth token from cache
+      await storage.remove(STORAGE_KEYS.AUTH_TOKEN);
     } catch (error) {
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to logout';
       setError(errorMessage);

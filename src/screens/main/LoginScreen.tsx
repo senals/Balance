@@ -11,21 +11,15 @@ type LoginScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, '
 export const LoginScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<LoginScreenNavigationProp>();
-  const { login, register, isLoading, error, clearError } = useApp();
+  const { login, isLoading, error, clearError } = useApp();
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-  const [isRegistering, setIsRegistering] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   const validateForm = () => {
     if (!email || !password) {
       setFormError('Please fill in all required fields');
-      return false;
-    }
-    if (isRegistering && !name) {
-      setFormError('Please enter your name');
       return false;
     }
     if (password.length < 6) {
@@ -39,26 +33,17 @@ export const LoginScreen: React.FC = () => {
     return true;
   };
 
-  const handleSubmit = async () => {
+  const handleLogin = async () => {
     if (!validateForm()) return;
     
     try {
-      if (isRegistering) {
-        await register(email, password, name);
-      } else {
-        await login(email, password);
-      }
+      setFormError(null);
+      await login(email, password);
       navigation.replace('Main');
     } catch (error) {
-      // Error is already handled by the AppContext
-      console.error('Authentication error:', error);
+      setFormError(error instanceof Error ? error.message : 'Login failed. Please try again.');
+      console.error('Login error:', error);
     }
-  };
-
-  const toggleMode = () => {
-    setIsRegistering(!isRegistering);
-    setFormError(null);
-    clearError();
   };
 
   return (
@@ -69,24 +54,13 @@ export const LoginScreen: React.FC = () => {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.formContainer}>
           <Text variant="headlineMedium" style={styles.title}>
-            {isRegistering ? 'Create Account' : 'Welcome Back'}
+            Welcome Back
           </Text>
           
           {(error || formError) && (
             <Text style={[styles.errorText, { color: theme.colors.error }]}>
               {formError || error}
             </Text>
-          )}
-
-          {isRegistering && (
-            <TextInput
-              label="Name"
-              value={name}
-              onChangeText={setName}
-              style={styles.input}
-              autoCapitalize="words"
-              disabled={isLoading}
-            />
           )}
 
           <TextInput
@@ -110,35 +84,22 @@ export const LoginScreen: React.FC = () => {
 
           <Button
             mode="contained"
-            onPress={handleSubmit}
+            onPress={handleLogin}
             style={styles.button}
             loading={isLoading}
             disabled={isLoading}
           >
-            {isRegistering ? 'Register' : 'Login'}
+            Login
           </Button>
 
           <Button
             mode="text"
-            onPress={toggleMode}
+            onPress={() => navigation.navigate('Register')}
             style={styles.switchButton}
             disabled={isLoading}
           >
-            {isRegistering
-              ? 'Already have an account? Login'
-              : "Don't have an account? Register"}
+            Don't have an account? Register
           </Button>
-
-          {!isRegistering && (
-            <Button
-              mode="text"
-              onPress={() => navigation.navigate('ResetPassword')}
-              style={styles.forgotButton}
-              disabled={isLoading}
-            >
-              Forgot Password?
-            </Button>
-          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -172,8 +133,5 @@ const styles = StyleSheet.create({
   errorText: {
     textAlign: 'center',
     marginBottom: 16,
-  },
-  forgotButton: {
-    marginTop: 8,
   },
 }); 

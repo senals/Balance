@@ -43,11 +43,15 @@ export const RegisterScreen: React.FC = () => {
     if (!validateForm()) return;
     
     try {
+      setFormError(null); // Clear any previous form errors
+      console.log('Starting registration process...'); // Debug log
       await register(email, password, name);
-      navigation.replace('Main');
+      console.log('Registration successful, navigating to readiness assessment...'); // Debug log
+      navigation.replace('ReadinessAssessment');
     } catch (error) {
-      // Error is already handled by the AppContext
-      console.error('Registration error:', error);
+      console.error('Registration error:', error); // Debug log
+      // Show error message to user
+      setFormError(error instanceof Error ? error.message : 'Registration failed. Please try again.');
     }
   };
 

@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { storage, DrinkEntry, UserProfile, UserSettings, BudgetData, PreGamePlan, StorageError, UserAccount, STORAGE_KEYS } from '../services/storage';
+import { storage, DrinkEntry, UserProfile, UserSettings, BudgetData, PreGamePlan, StorageError, UserAccount, STORAGE_KEYS, ReadinessAssessment } from '../services/storage';
 import { lightTheme, darkTheme } from '../theme/theme';
 
 interface AppContextType {
   // Authentication state
   isAuthenticated: boolean;
   currentUser: UserAccount | null;
+  setIsAuthenticated: (value: boolean) => void;
   
   // State
   isLoading: boolean;
@@ -15,6 +16,7 @@ interface AppContextType {
   drinks: DrinkEntry[];
   budget: BudgetData;
   preGamePlans: PreGamePlan[];
+  readinessAssessment: ReadinessAssessment | null;
   theme: typeof lightTheme;
 
   // Auth actions
@@ -42,6 +44,11 @@ interface AppContextType {
   addPreGamePlan: (plan: Omit<PreGamePlan, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => Promise<void>;
   updatePreGamePlan: (id: string, updates: Partial<PreGamePlan>) => Promise<void>;
   removePreGamePlan: (id: string) => Promise<void>;
+  
+  // Readiness assessment actions
+  getReadinessAssessment: () => Promise<ReadinessAssessment | null>;
+  addReadinessAssessment: (assessment: Omit<ReadinessAssessment, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ReadinessAssessment>;
+  updateReadinessAssessment: (updates: Partial<ReadinessAssessment>) => Promise<ReadinessAssessment>;
   
   // Error handling
   clearError: () => void;
@@ -71,6 +78,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     userId: '',
   });
   const [preGamePlans, setPreGamePlans] = useState<PreGamePlan[]>([]);
+  const [readinessAssessment, setReadinessAssessment] = useState<ReadinessAssessment | null>(null);
 
   // Theme state
   const theme = useMemo(() => settings.darkModeEnabled ? darkTheme : lightTheme, [settings.darkModeEnabled]);
@@ -106,12 +114,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsLoading(true);
       clearError();
       
-      const [profileData, settingsData, drinksData, budgetData, preGamePlansData] = await Promise.all([
+      const [profileData, settingsData, drinksData, budgetData, preGamePlansData, readinessAssessmentData] = await Promise.all([
         storage.profile.get(userId),
         storage.settings.get(userId),
         storage.drinks.getAll(userId),
         storage.budget.get(userId),
         storage.preGamePlans.getAll(userId),
+        storage.readinessAssessment.get(userId),
       ]);
 
       setUserProfile(profileData);
@@ -119,6 +128,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setDrinks(drinksData);
       setBudget(budgetData);
       setPreGamePlans(preGamePlansData);
+      setReadinessAssessment(readinessAssessmentData);
     } catch (error) {
       setError(error instanceof StorageError ? error.message : 'Failed to load data');
       console.error('Error loading data:', error);
@@ -156,7 +166,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       
       const user = await storage.auth.register(email, password, name);
       setCurrentUser(user);
-      setIsAuthenticated(true);
+      // Don't set isAuthenticated to true yet - wait for readiness assessment
       await loadUserData(user.id);
     } catch (error) {
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to register';
@@ -448,11 +458,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [clearError]);
 
+  // Readiness assessment actions
+  const getReadinessAssessment = useCallback(async () => {
+    try {
+      clearError();
+      const currentUser = await storage.auth.getCurrentUser();
+      if (!currentUser) {
+        throw new StorageError('User not authenticated', 'get', STORAGE_KEYS.READINESS_ASSESSMENT);
+      }
+      
+      const assessment = await storage.readinessAssessment.get(currentUser.id);
+      setReadinessAssessment(assessment);
+      return assessment;
+    } catch (error) {
+      const errorMessage = error instanceof StorageError ? error.message : 'Failed to get readiness assessment';
+      setError(errorMessage);
+      console.error('Error getting readiness assessment:', error);
+      throw error;
+    }
+  }, [clearError]);
+
+  const addReadinessAssessment = useCallback(async (assessment: Omit<ReadinessAssessment, 'id' | 'createdAt' | 'updatedAt'>) => {
+    try {
+      clearError();
+      const newAssessment = await storage.readinessAssessment.add(assessment);
+      setReadinessAssessment(newAssessment);
+      return newAssessment;
+    } catch (error) {
+      const errorMessage = error instanceof StorageError ? error.message : 'Failed to add readiness assessment';
+      setError(errorMessage);
+      console.error('Error adding readiness assessment:', error);
+      throw error;
+    }
+  }, [clearError]);
+
+  const updateReadinessAssessment = useCallback(async (updates: Partial<ReadinessAssessment>) => {
+    try {
+      clearError();
+      const updated = await storage.readinessAssessment.update(updates);
+      setReadinessAssessment(updated);
+      return updated;
+    } catch (error) {
+      const errorMessage = error instanceof StorageError ? error.message : 'Failed to update readiness assessment';
+      setError(errorMessage);
+      console.error('Error updating readiness assessment:', error);
+      throw error;
+    }
+  }, [clearError]);
+
   // Memoize the context value to prevent unnecessary re-renders
   const contextValue = useMemo(() => ({
     // Auth state
     isAuthenticated,
     currentUser,
+    setIsAuthenticated,
     
     // State
     isLoading,
@@ -462,6 +521,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     drinks,
     budget,
     preGamePlans,
+    readinessAssessment,
     theme,
 
     // Actions
@@ -479,10 +539,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addPreGamePlan,
     updatePreGamePlan,
     removePreGamePlan,
+    getReadinessAssessment,
+    addReadinessAssessment,
+    updateReadinessAssessment,
     clearError,
   }), [
     isAuthenticated,
     currentUser,
+    setIsAuthenticated,
     isLoading,
     error,
     userProfile,
@@ -490,6 +554,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     drinks,
     budget,
     preGamePlans,
+    readinessAssessment,
     theme,
     login,
     register,
@@ -505,6 +570,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addPreGamePlan,
     updatePreGamePlan,
     removePreGamePlan,
+    getReadinessAssessment,
+    addReadinessAssessment,
+    updateReadinessAssessment,
     clearError,
   ]);
 

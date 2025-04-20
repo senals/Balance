@@ -9,6 +9,7 @@ export const STORAGE_KEYS = {
   BUDGET: 'budget',
   PRE_GAME_PLANS: 'pre_game_plans',
   USERS: 'users',
+  READINESS_ASSESSMENT: 'readiness_assessment',
 } as const;
 
 // Types
@@ -80,6 +81,19 @@ export interface PreGamePlan {
   adherenceStatus?: 'pending' | 'success' | 'exceeded';
   adherenceNotes?: string;
   userId: string;
+}
+
+export interface ReadinessAssessment {
+  id: string;
+  userId: string;
+  stage: 'pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance';
+  score: number;
+  answers: {
+    questionId: string;
+    answer: number;
+  }[];
+  createdAt: string;
+  updatedAt: string;
 }
 
 // User account type
@@ -183,63 +197,76 @@ export const storage = {
   // User authentication methods
   auth: {
     async register(email: string, password: string, name: string): Promise<UserAccount> {
-      const users = await storage.get<UserAccount[]>(STORAGE_KEYS.USERS) || [];
-      
-      // Check if user already exists
-      if (users.some(user => user.email === email)) {
-        throw new StorageError('User with this email already exists', 'register');
+      try {
+        const users = await storage.get<UserAccount[]>(STORAGE_KEYS.USERS) || [];
+        
+        // Validate input
+        if (!email || !password || !name) {
+          throw new StorageError('All fields are required', 'register');
+        }
+        
+        // Check if user already exists
+        if (users.some(user => user.email === email)) {
+          throw new StorageError('User with this email already exists', 'register');
+        }
+        
+        const now = new Date().toISOString();
+        const newUser: UserAccount = {
+          id: Date.now().toString(),
+          email,
+          password,
+          name,
+          createdAt: now,
+          updatedAt: now,
+        };
+        
+        users.push(newUser);
+        await storage.set(STORAGE_KEYS.USERS, users);
+        
+        // Create initial user profile
+        const userProfile: UserProfile = {
+          id: newUser.id,
+          name,
+          email,
+          age: 21,
+          weight: 70,
+          height: 175,
+          gender: 'other',
+          createdAt: now,
+          updatedAt: now,
+        };
+        
+        await storage.set(storage.getUserKey(STORAGE_KEYS.USER_PROFILE, newUser.id), userProfile);
+        
+        // Create initial user settings
+        const userSettings: UserSettings = {
+          notificationsEnabled: true,
+          darkModeEnabled: false,
+          privacyModeEnabled: false,
+          dailyLimit: 3,
+          userId: newUser.id,
+        };
+        
+        await storage.set(storage.getUserKey(STORAGE_KEYS.SETTINGS, newUser.id), userSettings);
+        
+        // Create initial budget
+        const userBudget: BudgetData = {
+          dailyBudget: 15,
+          weeklyBudget: 105,
+          monthlyBudget: 450,
+          expenses: [],
+          userId: newUser.id,
+        };
+        
+        await storage.set(storage.getUserKey(STORAGE_KEYS.BUDGET, newUser.id), userBudget);
+        
+        return newUser;
+      } catch (error) {
+        if (error instanceof StorageError) {
+          throw error;
+        }
+        throw new StorageError('Failed to register user', 'register');
       }
-      
-      const now = new Date().toISOString();
-      const newUser: UserAccount = {
-        id: Date.now().toString(),
-        email,
-        password,
-        createdAt: now,
-        updatedAt: now,
-      };
-      
-      users.push(newUser);
-      await storage.set(STORAGE_KEYS.USERS, users);
-      
-      // Create initial user profile
-      const userProfile: UserProfile = {
-        id: newUser.id,
-        name,
-        email,
-        age: 21,
-        weight: 70,
-        height: 175,
-        gender: 'other',
-        createdAt: now,
-        updatedAt: now,
-      };
-      
-      await storage.set(storage.getUserKey(STORAGE_KEYS.USER_PROFILE, newUser.id), userProfile);
-      
-      // Create initial user settings
-      const userSettings: UserSettings = {
-        notificationsEnabled: true,
-        darkModeEnabled: false,
-        privacyModeEnabled: false,
-        dailyLimit: 3,
-        userId: newUser.id,
-      };
-      
-      await storage.set(storage.getUserKey(STORAGE_KEYS.SETTINGS, newUser.id), userSettings);
-      
-      // Create initial budget
-      const userBudget: BudgetData = {
-        dailyBudget: 15,
-        weeklyBudget: 105,
-        monthlyBudget: 450,
-        expenses: [],
-        userId: newUser.id,
-      };
-      
-      await storage.set(storage.getUserKey(STORAGE_KEYS.BUDGET, newUser.id), userBudget);
-      
-      return newUser;
     },
     
     async login(email: string, password: string): Promise<UserAccount> {
@@ -475,6 +502,51 @@ export const storage = {
       const plans = await this.getAll(currentUser.id);
       const filtered = plans.filter(p => p.id !== id);
       await storage.set(storage.getUserKey(STORAGE_KEYS.PRE_GAME_PLANS, currentUser.id), filtered);
+    },
+  },
+
+  readinessAssessment: {
+    async get(userId: string): Promise<ReadinessAssessment | null> {
+      return storage.get<ReadinessAssessment>(storage.getUserKey(STORAGE_KEYS.READINESS_ASSESSMENT, userId));
+    },
+
+    async add(assessment: Omit<ReadinessAssessment, 'id' | 'createdAt' | 'updatedAt'>): Promise<ReadinessAssessment> {
+      const currentUser = await storage.auth.getCurrentUser();
+      if (!currentUser) {
+        throw new StorageError('User not authenticated', 'add', STORAGE_KEYS.READINESS_ASSESSMENT);
+      }
+      
+      const now = new Date().toISOString();
+      const newAssessment: ReadinessAssessment = {
+        ...assessment,
+        id: Date.now().toString(),
+        createdAt: now,
+        updatedAt: now,
+      };
+      
+      await storage.set(storage.getUserKey(STORAGE_KEYS.READINESS_ASSESSMENT, currentUser.id), newAssessment);
+      return newAssessment;
+    },
+
+    async update(updates: Partial<ReadinessAssessment>): Promise<ReadinessAssessment> {
+      const currentUser = await storage.auth.getCurrentUser();
+      if (!currentUser) {
+        throw new StorageError('User not authenticated', 'update', STORAGE_KEYS.READINESS_ASSESSMENT);
+      }
+      
+      const current = await this.get(currentUser.id);
+      if (!current) {
+        throw new StorageError('No assessment found', 'update', STORAGE_KEYS.READINESS_ASSESSMENT);
+      }
+      
+      const updated = { 
+        ...current, 
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
+      
+      await storage.set(storage.getUserKey(STORAGE_KEYS.READINESS_ASSESSMENT, currentUser.id), updated);
+      return updated;
     },
   },
 }; 

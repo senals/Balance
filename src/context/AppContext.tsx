@@ -166,6 +166,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       
       const user = await storage.auth.register(email, password, name);
       setCurrentUser(user);
+      
+      // Set auth token after registration
+      await storage.set(STORAGE_KEYS.AUTH_TOKEN, user.id);
+      
       // Don't set isAuthenticated to true yet - wait for readiness assessment
       await loadUserData(user.id);
     } catch (error) {

@@ -86,8 +86,12 @@ export interface PreGamePlan {
 export interface ReadinessAssessment {
   id: string;
   userId: string;
-  stage: 'pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance';
-  score: number;
+  primaryStage: 'pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance';
+  secondaryStage: 'pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance' | null;
+  readinessScore: number;
+  confidenceLevel: number;
+  stageLevels: Record<string, { score: number; percentage: number }>;
+  recommendations: string[];
   answers: {
     questionId: string;
     answer: number;
@@ -288,11 +292,23 @@ export const storage = {
     },
     
     async getCurrentUser(): Promise<UserAccount | null> {
-      const userId = await storage.get<string>(STORAGE_KEYS.AUTH_TOKEN);
-      if (!userId) return null;
-      
-      const users = await storage.get<UserAccount[]>(STORAGE_KEYS.USERS) || [];
-      return users.find(u => u.id === userId) || null;
+      try {
+        const userId = await storage.get<string>(STORAGE_KEYS.AUTH_TOKEN);
+        if (!userId) return null;
+        
+        const users = await storage.get<UserAccount[]>(STORAGE_KEYS.USERS) || [];
+        const user = users.find(u => u.id === userId);
+        
+        if (!user) {
+          console.warn('User not found for ID:', userId);
+          return null;
+        }
+        
+        return user;
+      } catch (error) {
+        console.error('Error getting current user:', error);
+        return null;
+      }
     },
 
     async resetPassword(email: string, newPassword: string): Promise<void> {

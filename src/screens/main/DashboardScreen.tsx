@@ -13,8 +13,20 @@ const PlantGrowth3 = require('../../assets/images/Plantgrowth3.png');
 const PlantGrowth4 = require('../../assets/images/Plantgrowth4.png');
 const PlantGrowth5 = require('../../assets/images/Plantgrowth5.png');
 
-export const DashboardScreen = ({ navigation }: { navigation: any }) => {
-  const { drinks, settings, budget, userProfile, error, preGamePlans } = useApp();
+interface DashboardScreenProps {
+  navigation: any;
+}
+
+interface StageContent {
+  title: string;
+  description: string;
+  actionText: string;
+  actionIcon: string;
+  onAction: () => void;
+}
+
+export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
+  const { drinks, settings, budget, userProfile, error, preGamePlans, readinessAssessment } = useApp();
 
   // Calculate daily consumption
   const today = new Date().toISOString().split('T')[0];
@@ -115,6 +127,98 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
     .slice(0, 3); // Show only the next 3 upcoming plans
 
+  // Get stage-specific content
+  const getStageContent = () => {
+    if (!readinessAssessment) return null;
+
+    const { primaryStage, recommendations } = readinessAssessment;
+    let content: StageContent = {
+      title: '',
+      description: '',
+      actionText: '',
+      actionIcon: '',
+      onAction: () => {},
+    };
+
+    switch (primaryStage) {
+      case 'pre-contemplation':
+        content = {
+          title: 'Track Your Habits',
+          description: 'Understanding your drinking patterns is the first step. Track your drinks without pressure to change.',
+          actionText: 'View Drink History',
+          actionIcon: 'history',
+          onAction: () => navigation.navigate('DrinkTracker'),
+        };
+        break;
+      case 'contemplation':
+        content = {
+          title: 'Explore Your Options',
+          description: 'Consider how reducing your drinking could benefit your health and wallet.',
+          actionText: 'View Statistics',
+          actionIcon: 'chart-bar',
+          onAction: () => navigation.navigate('Statistics'),
+        };
+        break;
+      case 'preparation':
+        content = {
+          title: 'Plan for Success',
+          description: 'Create a plan to manage your drinking in social situations.',
+          actionText: 'Create Pre-Game Plan',
+          actionIcon: 'calendar-check',
+          onAction: () => navigation.navigate('PreGamePlanner'),
+        };
+        break;
+      case 'action':
+        content = {
+          title: 'Stay on Track',
+          description: "You're actively working on your goals. Keep monitoring your progress.",
+          actionText: 'View Budget',
+          actionIcon: 'cash',
+          onAction: () => navigation.navigate('BudgetTracker'),
+        };
+        break;
+      case 'maintenance':
+        content = {
+          title: 'Maintain Your Progress',
+          description: "You've made great progress! Focus on maintaining your healthy habits.",
+          actionText: 'View Achievements',
+          actionIcon: 'trophy',
+          onAction: () => navigation.navigate('Statistics'),
+        };
+        break;
+      default:
+        return null;
+    }
+
+    return (
+      <Card style={styles.stageCard}>
+        <Card.Content>
+          <Text style={styles.sectionTitle}>{content.title}</Text>
+          <Text style={styles.stageDescription}>{content.description}</Text>
+          {recommendations && recommendations.length > 0 && (
+            <View style={styles.recommendationsContainer}>
+              <Text style={styles.recommendationsTitle}>Recommendations:</Text>
+              {recommendations.map((recommendation, index) => (
+                <View key={index} style={styles.recommendationItem}>
+                  <MaterialCommunityIcons name="check-circle" size={16} color={colors.primary} />
+                  <Text style={styles.recommendationText}>{recommendation}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+          <Button
+            mode="contained"
+            icon={content.actionIcon}
+            onPress={content.onAction}
+            style={styles.stageActionButton}
+          >
+            {content.actionText}
+          </Button>
+        </Card.Content>
+      </Card>
+    );
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
@@ -123,6 +227,9 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
       </View>
       
       <View style={styles.content}>
+        {/* Stage-specific content */}
+        {getStageContent()}
+
         {/* Long-term Progress Plant */}
         <Card style={styles.treeCard}>
           <Card.Content style={styles.treeContent}>
@@ -625,6 +732,41 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   createPlanButton: {
+    marginTop: 8,
+  },
+  stageCard: {
+    marginBottom: 12,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    elevation: 2,
+  },
+  stageDescription: {
+    fontSize: 14,
+    color: colors.text,
+    marginBottom: 12,
+  },
+  recommendationsContainer: {
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  recommendationsTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  recommendationItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  recommendationText: {
+    fontSize: 14,
+    color: colors.text,
+    marginLeft: 8,
+    flex: 1,
+  },
+  stageActionButton: {
     marginTop: 8,
   },
 }); 

@@ -23,7 +23,10 @@ export const DevToolsScreen = ({ navigation }: { navigation: any }) => {
     updateSettings,
     updateBudget,
     updateProfile,
+    setDrinks,
+    setPreGamePlans,
     isLoading,
+    logout,
     error
   } = useApp();
 
@@ -45,6 +48,7 @@ export const DevToolsScreen = ({ navigation }: { navigation: any }) => {
     totalStorageSize: 0,
     lastSyncTime: new Date().toISOString(),
   });
+  const [isResetting, setIsResetting] = useState(false);
 
   // Reset state when tab changes
   useEffect(() => {
@@ -228,6 +232,52 @@ export const DevToolsScreen = ({ navigation }: { navigation: any }) => {
     } finally {
       setRefreshing(false);
     }
+  };
+
+  const handleResetDatabase = async () => {
+    Alert.alert(
+      'Reset All Data',
+      'Are you sure you want to reset ALL data? This will delete all users, drinks, and other data from the database. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset Everything',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsResetting(true);
+              
+              // Call the reset endpoint
+              const response = await fetch('http://localhost:5000/api/dev/reset-database', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                }
+              });
+
+              if (!response.ok) {
+                throw new Error('Failed to reset database');
+              }
+
+              // Show success message
+              setSnackbarMessage('Database reset successful. Please log out and create a new account.');
+              setSnackbarVisible(true);
+              
+              // Log out after a delay
+              setTimeout(async () => {
+                await logout();
+              }, 2000);
+            } catch (error) {
+              console.error('Error resetting database:', error);
+              setSnackbarMessage('Failed to reset database');
+              setSnackbarVisible(true);
+            } finally {
+              setIsResetting(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const renderItemList = () => {
@@ -552,6 +602,7 @@ export const DevToolsScreen = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    padding: 16,
     backgroundColor: colors.background,
   },
   header: {
@@ -566,6 +617,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: 'bold',
+    marginBottom: 16,
     color: colors.primary,
   },
   segmentedButtons: {
@@ -607,8 +659,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.text,
+    fontWeight: '600',
     marginBottom: 12,
   },
   listItem: {
@@ -634,8 +685,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   button: {
-    flex: 1,
-    marginHorizontal: 4,
+    marginVertical: 4,
   },
   deleteButton: {
     backgroundColor: colors.error,

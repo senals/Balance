@@ -1,50 +1,118 @@
-# Welcome to your Expo app 👋
+# TypeScript Express API with MongoDB, Mongoose, and Decorators
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+This project demonstrates how to build a RESTful API using TypeScript, Express, MongoDB, and Mongoose with decorators for clean and maintainable code.
 
-## Get started
+## Features
 
-1. Install dependencies
+- TypeScript for type safety
+- Express for routing and middleware
+- MongoDB with Mongoose for database operations
+- Decorators for clean and reusable code
+- RESTful API design
+- Error handling
 
-   ```bash
-   npm install
-   ```
+## Prerequisites
 
-2. Start the app
+- Node.js (v14 or higher)
+- MongoDB Atlas account or local MongoDB instance
+- npm or yarn
 
-   ```bash
-    npx expo start
-   ```
+## Installation
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
+1. Clone the repository:
 ```bash
-npm run reset-project
+git clone <repository-url>
+cd <repository-name>
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+2. Install dependencies:
+```bash
+npm install
+```
 
-## Learn more
+3. Create a `.env` file in the root directory with the following variables:
+```
+MONGODB_USER=your_username
+MONGODB_PASSWORD=your_password
+MONGODB_URL=your_cluster_url
+MONGODB_DATABASE=your_database_name
+PORT=3000
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+4. Build the project:
+```bash
+npm run build
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+5. Start the server:
+```bash
+npm start
+```
 
-## Join the community
+## API Endpoints
 
-Join our community of developers creating universal apps.
+### Books
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- `GET /books/getall` - Get all books
+- `GET /books/:id` - Get a specific book by ID
+- `POST /books/create` - Create a new book
+- `PATCH /books/update/:id` - Update a book
+- `DELETE /books/delete/:id` - Delete a book
+- `POST /books/query` - Query books based on criteria
+
+## Example Usage
+
+### Create a Book
+```bash
+curl -X POST http://localhost:3000/books/create \
+  -H "Content-Type: application/json" \
+  -d '{"title": "The Great Gatsby", "author": "F. Scott Fitzgerald"}'
+```
+
+### Get All Books
+```bash
+curl http://localhost:3000/books/getall
+```
+
+### Get a Book by ID
+```bash
+curl http://localhost:3000/books/60d21b4667d0d8992e610c85
+```
+
+### Update a Book
+```bash
+curl -X PATCH http://localhost:3000/books/update/60d21b4667d0d8992e610c85 \
+  -H "Content-Type: application/json" \
+  -d '{"title": "The Great Gatsby (Updated)"}'
+```
+
+### Delete a Book
+```bash
+curl -X DELETE http://localhost:3000/books/delete/60d21b4667d0d8992e610c85
+```
+
+### Query Books
+```bash
+curl -X POST http://localhost:3000/books/query \
+  -H "Content-Type: application/json" \
+  -d '{"author": "F. Scott Fitzgerald"}'
+```
+
+## Project Structure
+
+```
+src/
+├── config/             # Configuration files
+├── controllers/        # Route controllers
+├── decorators/         # Custom decorators
+│   └── mongoose/       # Mongoose-specific decorators
+├── middleware/         # Express middleware
+├── models/             # Mongoose models
+├── routes/             # Express routes
+├── types/              # TypeScript type definitions
+└── server.ts           # Main application file
+```
+
+## License
+
+MIT

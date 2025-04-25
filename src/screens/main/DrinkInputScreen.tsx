@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, TextInput, Button, Card, IconButton, SegmentedButtons, Snackbar } from 'react-native-paper';
 import { colors } from '../../theme/colors';
 import { DrinkHierarchySelector } from '../../components/DrinkHierarchySelector';
 import { useApp } from '../../context/AppContext';
+import { drinkApi } from '../../services/drinkApi';
 
 export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
-  const { addDrink, drinks, error } = useApp();
+  const { addDrink, addExpense, drinks, error, currentUser } = useApp();
   const [selectedDrink, setSelectedDrink] = useState<{
     category: string;
     type: string;
@@ -20,34 +21,143 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
   const [inputMode, setInputMode] = useState('drink');
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Reset form when mode changes
+  useEffect(() => {
+    if (inputMode === 'expense') {
+      setSelectedDrink(null);
+      setQuantity('1');
+    }
+  }, [inputMode]);
 
   const handleSaveDrink = async () => {
-    if (!selectedDrink) return;
+    if (!currentUser?.id) {
+      console.error('No current user ID available');
+      setSnackbarMessage('Please ensure you are logged in');
+      setSnackbarVisible(true);
+      return;
+    }
+    
+    if (isSubmitting) {
+      console.log('Already submitting, preventing duplicate submission');
+      return; // Prevent multiple submissions
+    }
+    
+    setIsSubmitting(true);
     
     try {
-      await addDrink({
-        ...selectedDrink,
-        quantity: parseInt(quantity),
-        price: parseFloat(price) || 0,
-        location,
-        notes,
-        timestamp: new Date().toISOString(),
-      });
+      if (inputMode === 'drink') {
+        // Validate required fields for drink
+        if (!selectedDrink || !selectedDrink.category || !selectedDrink.type || !selectedDrink.brand) {
+          console.error('Missing required drink fields:', selectedDrink);
+          setSnackbarMessage('Please select a complete drink');
+          setSnackbarVisible(true);
+          setIsSubmitting(false);
+          return;
+        }
 
-      setSnackbarMessage('Drink saved successfully!');
+        if (!price || parseFloat(price) <= 0) {
+          console.error('Invalid price:', price);
+          setSnackbarMessage('Please enter a valid price');
+          setSnackbarVisible(true);
+          setIsSubmitting(false);
+          return;
+        }
+
+        const newDrink = {
+          ...selectedDrink,
+          quantity: parseInt(quantity) || 1,
+          price: parseFloat(price) || 0,
+          location: location.trim(),
+          notes: notes.trim(),
+          timestamp: new Date().toISOString(),
+        };
+
+        console.log('Saving drink:', newDrink);
+
+        try {
+          // Try direct API call first to debug
+          console.log('Making direct API call to save drink...');
+          const directResponse = await fetch('http://localhost:5000/api/drinks', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              userId: currentUser.id,
+              type: newDrink.type,
+              amount: newDrink.quantity,
+              timestamp: new Date(newDrink.timestamp),
+              notes: newDrink.notes || '',
+              category: newDrink.category,
+              brand: newDrink.brand,
+              alcoholContent: newDrink.alcoholContent,
+              price: newDrink.price,
+              location: newDrink.location
+            }),
+          });
+          
+          if (!directResponse.ok) {
+            const errorData = await directResponse.json().catch(() => ({}));
+            console.error('Direct API call failed:', directResponse.status, errorData);
+            throw new Error(errorData.message || `API error: ${directResponse.status}`);
+          }
+          
+          const savedDrinkData = await directResponse.json();
+          console.log('Direct API call successful:', savedDrinkData);
+          
+          // Now use AppContext's addDrink which handles both local state and MongoDB
+          console.log('Calling addDrink with user ID:', currentUser.id);
+          const savedDrink = await addDrink(newDrink);
+          console.log('Drink saved successfully:', savedDrink);
+
+          setSnackbarMessage('Drink saved successfully!');
+        } catch (apiError) {
+          console.error('Error in direct API call:', apiError);
+          throw apiError;
+        }
+      } else {
+        // Handle expense mode
+        if (!price || parseFloat(price) <= 0) {
+          setSnackbarMessage('Please enter a valid price');
+          setSnackbarVisible(true);
+          setIsSubmitting(false);
+          return;
+        }
+
+        const newExpense = {
+          amount: parseFloat(price),
+          category: selectedDrink?.category || 'Other',
+          date: new Date().toISOString(),
+          notes: notes.trim() || `${selectedDrink?.brand || 'Expense'} at ${location.trim() || 'Unknown location'}`
+        };
+
+        console.log('Saving expense:', newExpense);
+
+        // Use AppContext's addExpense
+        await addExpense(newExpense);
+        console.log('Expense saved successfully');
+
+        setSnackbarMessage('Expense saved successfully!');
+      }
+      
       setSnackbarVisible(true);
+      
+      // Reset form
+      setPrice('');
+      setLocation('');
+      setNotes('');
       
       // Navigate back after a short delay
       setTimeout(() => {
-        if (inputMode === 'drink') {
-          navigation.navigate('DrinkTracker');
-        } else {
-          navigation.navigate('BudgetTracker');
-        }
+        navigation.navigate('BudgetTracker');
       }, 1500);
     } catch (error) {
-      setSnackbarMessage(error instanceof Error ? error.message : 'Failed to save drink');
-      setSnackbarVisible(true);
+      console.error('Error saving drink:', error);
+      setSnackbarMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -80,28 +190,32 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
           style={styles.segmentedButtons}
         />
         
-        <DrinkHierarchySelector onSelectDrink={setSelectedDrink} />
+        {inputMode === 'drink' && (
+          <DrinkHierarchySelector onSelectDrink={setSelectedDrink} />
+        )}
         
         <Card style={styles.card}>
           <Card.Content>
             <Text style={styles.sectionTitle}>Details</Text>
-            <TextInput
-              label="Quantity"
-              value={quantity}
-              onChangeText={setQuantity}
-              keyboardType="numeric"
-              style={styles.input}
-              mode="outlined"
-              theme={{ 
-                colors: { 
-                  background: colors.input,
-                  primary: colors.text,
-                  accent: colors.text,
-                  text: colors.text,
-                  placeholder: colors.text
-                } 
-              }}
-            />
+            {inputMode === 'drink' && (
+              <TextInput
+                label="Quantity"
+                value={quantity}
+                onChangeText={setQuantity}
+                keyboardType="numeric"
+                style={styles.input}
+                mode="outlined"
+                theme={{ 
+                  colors: { 
+                    background: colors.input,
+                    primary: colors.text,
+                    accent: colors.text,
+                    text: colors.text,
+                    placeholder: colors.text
+                  } 
+                }}
+              />
+            )}
             <TextInput
               label="Price (£)"
               value={price}
@@ -144,7 +258,7 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
               mode="outlined"
               multiline
               numberOfLines={3}
-              placeholder="Add any notes about this drink"
+              placeholder={inputMode === 'drink' ? "Add any notes about this drink" : "Add any notes about this expense"}
               theme={{ 
                 colors: { 
                   background: colors.input,
@@ -162,15 +276,17 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
           mode="contained"
           onPress={handleSaveDrink}
           style={styles.saveButton}
-          disabled={!selectedDrink}
+          disabled={isSubmitting || (inputMode === 'drink' && !selectedDrink)}
+          loading={isSubmitting}
         >
-          Save {inputMode === 'drink' ? 'Drink' : 'Expense'}
+          {isSubmitting ? 'Saving...' : `Save ${inputMode === 'drink' ? 'Drink' : 'Expense'}`}
         </Button>
 
         <Button
           mode="outlined"
           onPress={handleTestStorage}
           style={styles.testButton}
+          disabled={isSubmitting}
         >
           Test Storage
         </Button>

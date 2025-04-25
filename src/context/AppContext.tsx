@@ -1,8 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
-import { storage, DrinkEntry, UserProfile, UserSettings, BudgetData, PreGamePlan, StorageError, UserAccount, STORAGE_KEYS, ReadinessAssessment } from '../services/storage';
+import { storage, STORAGE_KEYS, StorageError, UserAccount, UserProfile, UserSettings, DrinkEntry, BudgetData, PreGamePlan, ReadinessAssessment } from '../services/storage';
 import { lightTheme, darkTheme } from '../theme/theme';
+import { drinkApi } from '../services/drinkApi';
+import { dataService } from '../services/dataService';
 
-interface AppContextType {
+export type AppContextType = {
   // Authentication state
   isAuthenticated: boolean;
   currentUser: UserAccount | null;
@@ -14,8 +16,10 @@ interface AppContextType {
   userProfile: UserProfile | null;
   settings: UserSettings;
   drinks: DrinkEntry[];
+  setDrinks: React.Dispatch<React.SetStateAction<DrinkEntry[]>>;
   budget: BudgetData;
   preGamePlans: PreGamePlan[];
+  setPreGamePlans: React.Dispatch<React.SetStateAction<PreGamePlan[]>>;
   readinessAssessment: ReadinessAssessment | null;
   theme: typeof lightTheme;
 
@@ -24,6 +28,7 @@ interface AppContextType {
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
+  resetPassword: (email: string, newPassword: string) => Promise<void>;
   
   // Profile actions
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
@@ -32,13 +37,13 @@ interface AppContextType {
   updateSettings: (updates: Partial<UserSettings>) => Promise<void>;
   
   // Drink actions
-  addDrink: (drink: Omit<DrinkEntry, 'id' | 'userId'>) => Promise<void>;
-  updateDrink: (id: string, updates: Partial<DrinkEntry>) => Promise<void>;
+  addDrink: (drink: Omit<DrinkEntry, 'id' | 'userId'>) => Promise<DrinkEntry>;
+  updateDrink: (id: string, updates: Partial<DrinkEntry>) => Promise<DrinkEntry>;
   removeDrink: (id: string) => Promise<void>;
   
   // Budget actions
   updateBudget: (updates: Partial<Omit<BudgetData, 'expenses'>>) => Promise<void>;
-  addExpense: (expense: Omit<BudgetData['expenses'][0], 'id'>) => Promise<void>;
+  addExpense: (expense: Omit<BudgetData['expenses'][0], 'id'>) => Promise<BudgetData['expenses'][0]>;
 
   // Pre-game plan actions
   addPreGamePlan: (plan: Omit<PreGamePlan, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => Promise<void>;
@@ -47,17 +52,108 @@ interface AppContextType {
   
   // Readiness assessment actions
   getReadinessAssessment: () => Promise<ReadinessAssessment | null>;
-  addReadinessAssessment: (assessment: Omit<ReadinessAssessment, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ReadinessAssessment>;
-  updateReadinessAssessment: (updates: Partial<ReadinessAssessment>) => Promise<ReadinessAssessment>;
+  addReadinessAssessment: (assessment: Omit<ReadinessAssessment, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  updateReadinessAssessment: (updates: Partial<ReadinessAssessment>) => Promise<void>;
   
   // Error handling
   clearError: () => void;
-}
+};
 
-const AppContext = createContext<AppContextType | undefined>(undefined);
+export const AppContext = createContext<AppContextType>({
+  // Authentication state
+  isAuthenticated: false,
+  currentUser: null,
+  setIsAuthenticated: () => {},
+  
+  // State
+  isLoading: false,
+  error: null,
+  userProfile: null,
+  settings: {
+    notificationsEnabled: true,
+    darkModeEnabled: false,
+    privacyModeEnabled: false,
+    dailyLimit: 3,
+    userId: '',
+  },
+  drinks: [],
+  setDrinks: () => {},
+  budget: {
+    dailyBudget: 15,
+    weeklyBudget: 105,
+    monthlyBudget: 450,
+    expenses: [],
+    userId: '',
+  },
+  preGamePlans: [],
+  setPreGamePlans: () => {},
+  readinessAssessment: null,
+  theme: lightTheme,
+
+  // Auth actions
+  login: async () => {},
+  register: async () => {},
+  logout: async () => {},
+  deleteAccount: async () => {},
+  resetPassword: async () => {},
+  
+  // Profile actions
+  updateProfile: async () => {},
+  
+  // Settings actions
+  updateSettings: async () => {},
+  
+  // Drink actions
+  addDrink: async () => ({ 
+    id: '', 
+    category: '', 
+    type: '', 
+    brand: '', 
+    alcoholContent: 0, 
+    quantity: 0, 
+    price: 0, 
+    timestamp: '', 
+    userId: '' 
+  }),
+  updateDrink: async () => ({ 
+    id: '', 
+    category: '', 
+    type: '', 
+    brand: '', 
+    alcoholContent: 0, 
+    quantity: 0, 
+    price: 0, 
+    timestamp: '', 
+    userId: '' 
+  }),
+  removeDrink: async () => {},
+  
+  // Budget actions
+  updateBudget: async () => {},
+  addExpense: async () => ({ 
+    id: '', 
+    amount: 0, 
+    category: '', 
+    date: new Date().toISOString(), 
+    notes: '' 
+  }),
+
+  // Pre-game plan actions
+  addPreGamePlan: async () => {},
+  updatePreGamePlan: async () => {},
+  removePreGamePlan: async () => {},
+  
+  // Readiness assessment actions
+  getReadinessAssessment: async () => null,
+  addReadinessAssessment: async () => {},
+  updateReadinessAssessment: async () => {},
+  
+  // Error handling
+  clearError: () => {},
+});
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
@@ -109,33 +205,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Load user data
-  const loadUserData = async (userId: string) => {
+  const loadUserData = useCallback(async (userId: string) => {
     try {
       setIsLoading(true);
       clearError();
       
-      const [profileData, settingsData, drinksData, budgetData, preGamePlansData, readinessAssessmentData] = await Promise.all([
-        storage.profile.get(userId),
-        storage.settings.get(userId),
-        storage.drinks.getAll(userId),
-        storage.budget.get(userId),
-        storage.preGamePlans.getAll(userId),
-        storage.readinessAssessment.get(userId),
-      ]);
-
-      setUserProfile(profileData);
-      setSettings(settingsData);
-      setDrinks(drinksData);
-      setBudget(budgetData);
-      setPreGamePlans(preGamePlansData);
-      setReadinessAssessment(readinessAssessmentData);
+      // Load user profile
+      const profile = await storage.profile.get(userId);
+      setUserProfile(profile);
+      
+      // Load settings
+      const userSettings = await storage.settings.get(userId);
+      setSettings(userSettings);
+      
+      // Load drinks from MongoDB
+      const userDrinks = await drinkApi.getAll(userId);
+      setDrinks(userDrinks);
+      
+      // Load budget
+      const userBudget = await storage.budget.get(userId);
+      setBudget(userBudget ? {
+        dailyBudget: userBudget.dailyBudget,
+        weeklyBudget: userBudget.weeklyBudget,
+        monthlyBudget: userBudget.monthlyBudget,
+        expenses: userBudget.expenses.map((expense, index) => ({
+          id: `expense-${index}`,
+          amount: expense.amount,
+          category: expense.category,
+          date: expense.date instanceof Date ? expense.date.toISOString() : expense.date,
+          notes: expense.notes
+        })),
+        userId: userBudget.userId
+      } : {
+        dailyBudget: 0,
+        weeklyBudget: 0,
+        monthlyBudget: 0,
+        expenses: [],
+        userId: userId
+      });
+      
+      // Load pre-game plans
+      const plans = await storage.preGamePlans.getAll(userId);
+      setPreGamePlans(plans);
+      
+      // Load readiness assessment
+      const assessment = await storage.readinessAssessment.get(userId);
+      setReadinessAssessment(assessment);
     } catch (error) {
-      setError(error instanceof StorageError ? error.message : 'Failed to load data');
-      console.error('Error loading data:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load user data';
+      setError(errorMessage);
+      console.error('Error loading user data:', error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [clearError]);
 
   // Auth actions
   const login = useCallback(async (email: string, password: string) => {
@@ -143,6 +266,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsLoading(true);
       clearError();
       
+      // Login with local storage
       const user = await storage.auth.login(email, password);
       setCurrentUser(user);
       setIsAuthenticated(true);
@@ -164,14 +288,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsLoading(true);
       clearError();
       
+      // Create user in local storage
       const user = await storage.auth.register(email, password, name);
       setCurrentUser(user);
       
       // Set auth token after registration
       await storage.set(STORAGE_KEYS.AUTH_TOKEN, user.id);
       
+      // Initialize user profile with basic information
+      const initialProfile: UserProfile = {
+        id: user.id,
+        name: name,
+        email: email,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      
+      // Save initial profile
+      await storage.profile.update(initialProfile);
+      setUserProfile(initialProfile);
+      
+      // Initialize default settings
+      const defaultSettings: UserSettings = {
+        notificationsEnabled: true,
+        darkModeEnabled: false,
+        privacyModeEnabled: false,
+        dailyLimit: 3,
+        userId: user.id,
+      };
+      
+      await storage.settings.update(defaultSettings);
+      setSettings(defaultSettings);
+      
+      // Initialize default budget
+      const defaultBudget: BudgetData = {
+        dailyBudget: 15,
+        weeklyBudget: 105,
+        monthlyBudget: 450,
+        expenses: [],
+        userId: user.id,
+      };
+      
+      await storage.set(storage.getUserKey(STORAGE_KEYS.BUDGET, user.id), defaultBudget);
+      setBudget(defaultBudget);
+      
       // Don't set isAuthenticated to true yet - wait for readiness assessment
-      await loadUserData(user.id);
+      // This ensures the user completes the assessment before accessing the main app
     } catch (error) {
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to register';
       setError(errorMessage);
@@ -187,9 +349,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setIsLoading(true);
       clearError();
       
+      // Only remove the auth token
       await storage.auth.logout();
       
-      // Clear all state
+      // Clear state but don't clear stored data
       setCurrentUser(null);
       setIsAuthenticated(false);
       setUserProfile(null);
@@ -209,9 +372,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         userId: '',
       });
       setPreGamePlans([]);
-      
-      // Clear only the auth token from cache
-      await storage.remove(STORAGE_KEYS.AUTH_TOKEN);
+      setReadinessAssessment(null);
     } catch (error) {
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to logout';
       setError(errorMessage);
@@ -315,23 +476,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Drink actions
   const addDrink = useCallback(async (drink: Omit<DrinkEntry, 'id' | 'userId'>) => {
-    const tempId = Date.now().toString();
     try {
       clearError();
-      // Optimistic update
-      const tempDrink = { ...drink, id: tempId, userId: currentUser?.id || '' };
-      setDrinks(prev => [...prev, tempDrink]);
-
-      const newDrink = await storage.drinks.add(drink);
       
-      // Update with actual data
-      setDrinks(prev => prev.map(d => d.id === tempId ? newDrink : d));
+      if (!currentUser?.id) {
+        console.error('Cannot add drink: No current user ID available');
+        throw new Error('User not authenticated');
+      }
+
+      console.log('Adding drink to MongoDB:', { ...drink, userId: currentUser.id });
+
+      // Save to MongoDB
+      try {
+        // Format the drink data to match the MongoDB schema
+        const formattedDrink = {
+          userId: currentUser.id,
+          type: drink.type,
+          amount: drink.quantity,
+          timestamp: new Date(drink.timestamp),
+          notes: drink.notes || '',
+          category: drink.category,
+          brand: drink.brand,
+          alcoholContent: drink.alcoholContent,
+          price: drink.price,
+          location: drink.location
+        };
+        
+        console.log('Formatted drink for MongoDB:', formattedDrink);
+        
+        const newDrink = await drinkApi.create(drink, currentUser.id);
+        console.log('MongoDB server response:', newDrink);
+        
+        // Convert the MongoDB response to the format expected by the app
+        const formattedDrinkEntry: DrinkEntry = {
+          id: newDrink._id || newDrink.id,
+          category: newDrink.category || drink.category,
+          type: newDrink.type || drink.type,
+          brand: newDrink.brand || drink.brand,
+          alcoholContent: newDrink.alcoholContent || drink.alcoholContent,
+          quantity: newDrink.amount || drink.quantity,
+          price: newDrink.price || drink.price,
+          location: newDrink.location || drink.location,
+          notes: newDrink.notes || drink.notes,
+          timestamp: newDrink.timestamp || drink.timestamp,
+          userId: newDrink.userId || currentUser.id
+        };
+        
+        console.log('Formatted drink for local state:', formattedDrinkEntry);
+        
+        // Update local state immediately
+        setDrinks(prev => {
+          const updated = [...prev, formattedDrinkEntry];
+          console.log('Updated drinks state with new drink. Total drinks:', updated.length);
+          return updated;
+        });
+
+        // Add the drink as an expense in the budget tracking system
+        if (formattedDrinkEntry.price > 0) {
+          console.log('Adding drink as expense to budget');
+          const expense = {
+            amount: formattedDrinkEntry.price,
+            category: 'Drinks',
+            date: formattedDrinkEntry.timestamp,
+            notes: `${formattedDrinkEntry.quantity}x ${formattedDrinkEntry.brand} at ${formattedDrinkEntry.location || 'Unknown location'}`
+          };
+          const updatedBudget = await dataService.budget.addExpense(currentUser.id, expense);
+          if (updatedBudget) {
+            console.log('Budget updated successfully');
+            // Convert the API budget to the storage budget format
+            const storageBudget: BudgetData = {
+              dailyBudget: updatedBudget.dailyBudget,
+              weeklyBudget: updatedBudget.weeklyBudget,
+              monthlyBudget: updatedBudget.monthlyBudget,
+              userId: updatedBudget.userId,
+              expenses: updatedBudget.expenses.map(exp => ({
+                id: Date.now().toString(), // Generate a new ID for each expense
+                amount: exp.amount,
+                category: exp.category,
+                date: exp.date.toISOString(),
+                notes: exp.notes
+              }))
+            };
+            setBudget(storageBudget);
+          }
+        }
+        
+        return formattedDrinkEntry;
+      } catch (apiError) {
+        console.error('MongoDB API error:', apiError);
+        throw apiError;
+      }
     } catch (error) {
-      // Rollback on error
-      setDrinks(prev => prev.filter(d => d.id !== tempId));
-      const errorMessage = error instanceof StorageError ? error.message : 'Failed to add drink';
+      console.error('Error in addDrink function:', error);
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          stack: error.stack
+        });
+      }
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add drink';
       setError(errorMessage);
-      console.error('Error adding drink:', error);
       throw error;
     }
   }, [clearError, currentUser]);
@@ -339,17 +583,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateDrink = useCallback(async (id: string, updates: Partial<DrinkEntry>) => {
     try {
       clearError();
-      // Optimistic update
-      setDrinks(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
       
-      const updated = await storage.drinks.update(id, updates);
+      // Update in MongoDB
+      const updated = await drinkApi.update(id, updates);
       
-      // Update with actual data
+      // Update local state
       setDrinks(prev => prev.map(d => d.id === id ? updated : d));
+      
+      return updated;
     } catch (error) {
-      // Rollback on error
-      setDrinks(prev => prev.map(d => d.id === id ? { ...d, ...updates } : d));
-      const errorMessage = error instanceof StorageError ? error.message : 'Failed to update drink';
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update drink';
       setError(errorMessage);
       console.error('Error updating drink:', error);
       throw error;
@@ -359,13 +602,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const removeDrink = useCallback(async (id: string) => {
     try {
       clearError();
-      // Optimistic update
-      setDrinks(prev => prev.filter(d => d.id !== id));
       
-      await storage.drinks.remove(id);
+      // Delete from MongoDB
+      await drinkApi.delete(id);
+      
+      // Update local state
+      setDrinks(prev => prev.filter(d => d.id !== id));
     } catch (error) {
-      // Rollback on error
-      const errorMessage = error instanceof StorageError ? error.message : 'Failed to remove drink';
+      const errorMessage = error instanceof Error ? error.message : 'Failed to remove drink';
       setError(errorMessage);
       console.error('Error removing drink:', error);
       throw error;
@@ -376,51 +620,113 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const updateBudget = useCallback(async (updates: Partial<Omit<BudgetData, 'expenses'>>) => {
     try {
       clearError();
+      
+      if (!currentUser?.id) {
+        throw new Error('User not authenticated');
+      }
+      
       // Optimistic update
       setBudget(prev => ({ ...prev, ...updates }));
       
-      const updated = await storage.budget.update(updates);
-      
-      // Update with actual data
-      setBudget(updated);
+      const updatedBudget = await dataService.budget.update(currentUser.id, updates);
+      if (updatedBudget) {
+        // Convert the API budget to the storage budget format
+        const storageBudget: BudgetData = {
+          dailyBudget: updatedBudget.dailyBudget,
+          weeklyBudget: updatedBudget.weeklyBudget,
+          monthlyBudget: updatedBudget.monthlyBudget,
+          userId: updatedBudget.userId,
+          expenses: updatedBudget.expenses.map(exp => ({
+            id: Date.now().toString(), // Generate a new ID for each expense
+            amount: exp.amount,
+            category: exp.category,
+            date: exp.date.toISOString(),
+            notes: exp.notes
+          }))
+        };
+        setBudget(storageBudget);
+      }
     } catch (error) {
-      const errorMessage = error instanceof StorageError ? error.message : 'Failed to update budget';
-      setError(errorMessage);
       console.error('Error updating budget:', error);
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          stack: error.stack
+        });
+      }
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update budget';
+      setError(errorMessage);
       throw error;
     }
-  }, [clearError]);
+  }, [clearError, currentUser]);
 
   const addExpense = useCallback(async (expense: Omit<BudgetData['expenses'][0], 'id'>) => {
     try {
       clearError();
+      
+      if (!currentUser?.id) {
+        throw new Error('User not authenticated');
+      }
+      
+      console.log('Adding expense:', expense);
+      
       // Optimistic update
       const tempId = Date.now().toString();
       const tempExpense = { ...expense, id: tempId };
+      
+      // Update local state immediately
       setBudget(prev => ({
         ...prev,
         expenses: [...prev.expenses, tempExpense],
       }));
       
-      const newExpense = await storage.budget.addExpense(expense);
+      // Save to storage
+      const updatedBudget = await dataService.budget.addExpense(currentUser.id, expense);
       
-      // Update with actual data
-      setBudget(prev => ({
-        ...prev,
-        expenses: prev.expenses.map(e => e.id === tempId ? newExpense : e),
-      }));
+      // If we have a valid budget, update the state
+      if (updatedBudget) {
+        const storageBudget: BudgetData = {
+          dailyBudget: updatedBudget.dailyBudget,
+          weeklyBudget: updatedBudget.weeklyBudget,
+          monthlyBudget: updatedBudget.monthlyBudget,
+          userId: updatedBudget.userId,
+          expenses: updatedBudget.expenses.map(exp => ({
+            id: Date.now().toString(),
+            amount: exp.amount,
+            category: exp.category,
+            date: exp.date.toISOString(),
+            notes: exp.notes
+          }))
+        };
+        
+        // Update the state with the new budget
+        setBudget(storageBudget);
+        
+        // Return the newly added expense
+        return storageBudget.expenses[storageBudget.expenses.length - 1];
+      }
+      
+      // If no budget was updated, return the temporary expense
+      return tempExpense;
     } catch (error) {
       // Rollback on error
       setBudget(prev => ({
         ...prev,
         expenses: prev.expenses.filter(e => e.id !== Date.now().toString()),
       }));
-      const errorMessage = error instanceof StorageError ? error.message : 'Failed to add expense';
-      setError(errorMessage);
+      
       console.error('Error adding expense:', error);
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          stack: error.stack
+        });
+      }
+      const errorMessage = error instanceof Error ? error.message : 'Failed to add expense';
+      setError(errorMessage);
       throw error;
     }
-  }, [clearError]);
+  }, [clearError, currentUser]);
 
   // Pre-game plan actions
   const addPreGamePlan = useCallback(async (plan: Omit<PreGamePlan, 'id' | 'createdAt' | 'updatedAt' | 'userId'>) => {
@@ -487,7 +793,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearError();
       const newAssessment = await storage.readinessAssessment.add(assessment);
       setReadinessAssessment(newAssessment);
-      return newAssessment;
     } catch (error) {
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to add readiness assessment';
       setError(errorMessage);
@@ -501,12 +806,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearError();
       const updated = await storage.readinessAssessment.update(updates);
       setReadinessAssessment(updated);
-      return updated;
     } catch (error) {
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to update readiness assessment';
       setError(errorMessage);
       console.error('Error updating readiness assessment:', error);
       throw error;
+    }
+  }, [clearError]);
+
+  // Auth actions
+  const resetPassword = useCallback(async (email: string, newPassword: string) => {
+    try {
+      setIsLoading(true);
+      clearError();
+      await storage.auth.resetPassword(email, newPassword);
+    } catch (error) {
+      const errorMessage = error instanceof StorageError ? error.message : 'Failed to reset password';
+      setError(errorMessage);
+      console.error('Error resetting password:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
     }
   }, [clearError]);
 
@@ -523,8 +843,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     userProfile,
     settings,
     drinks,
+    setDrinks,
     budget,
     preGamePlans,
+    setPreGamePlans,
     readinessAssessment,
     theme,
 
@@ -533,6 +855,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     register,
     logout,
     deleteAccount,
+    resetPassword,
     updateProfile,
     updateSettings,
     addDrink,
@@ -556,14 +879,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     userProfile,
     settings,
     drinks,
+    setDrinks,
     budget,
     preGamePlans,
+    setPreGamePlans,
     readinessAssessment,
     theme,
     login,
     register,
     logout,
     deleteAccount,
+    resetPassword,
     updateProfile,
     updateSettings,
     addDrink,

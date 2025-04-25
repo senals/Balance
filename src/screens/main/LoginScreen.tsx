@@ -11,7 +11,7 @@ type LoginScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, '
 export const LoginScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<LoginScreenNavigationProp>();
-  const { login, isLoading, error, clearError } = useApp();
+  const { login, isLoading, error, clearError, getReadinessAssessment } = useApp();
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -39,7 +39,17 @@ export const LoginScreen: React.FC = () => {
     try {
       setFormError(null);
       await login(email, password);
-      navigation.replace('Main');
+      
+      // Check if user has completed the readiness assessment
+      const assessment = await getReadinessAssessment();
+      
+      if (!assessment) {
+        // If no assessment exists, navigate to the readiness assessment
+        navigation.replace('ReadinessAssessment');
+      } else {
+        // If assessment exists, navigate to the main app
+        navigation.replace('Main');
+      }
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Login failed. Please try again.');
       console.error('Login error:', error);

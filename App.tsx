@@ -24,7 +24,7 @@ import { RootStackParamList } from './src/navigation/types';
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const AppContent = () => {
-  const { isAuthenticated, theme } = useApp();
+  const { isAuthenticated, theme, currentUser } = useApp();
 
   return (
     <PaperProvider theme={theme}>

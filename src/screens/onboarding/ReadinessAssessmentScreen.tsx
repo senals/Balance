@@ -66,7 +66,7 @@ const ASSESSMENT_QUESTIONS = [
 export const ReadinessAssessmentScreen: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<ReadinessAssessmentScreenNavigationProp>();
-  const { currentUser, readinessAssessment, setIsAuthenticated } = useApp();
+  const { currentUser, readinessAssessment, setIsAuthenticated, addReadinessAssessment } = useApp();
   
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
@@ -99,7 +99,9 @@ export const ReadinessAssessmentScreen: React.FC = () => {
       'maintenance': 0,
     };
 
-    // Calculate weighted scores
+    // Calculate weighted scores with enhanced logging
+    console.log('Calculating stage scores from answers:', answers);
+    
     Object.entries(answers).forEach(([questionId, answer]) => {
       const question = ASSESSMENT_QUESTIONS.find(q => q.id === questionId);
       if (question) {
@@ -111,45 +113,79 @@ export const ReadinessAssessmentScreen: React.FC = () => {
           : answer;
           
         stageScores[question.stage] += adjustedAnswer * weight;
+        
+        console.log(`Question ${questionId} (${question.stage}): Answer=${answer}, Adjusted=${adjustedAnswer}, Weight=${weight}, Contribution=${adjustedAnswer * weight}`);
       }
     });
 
-    // Calculate maximum possible scores for each stage
+    // Calculate maximum possible scores for each stage with validation
     const maxScores: Record<string, number> = {};
     Object.keys(stageScores).forEach(stage => {
       const stageQuestions = ASSESSMENT_QUESTIONS.filter(q => q.stage === stage);
       maxScores[stage] = stageQuestions.reduce((sum, q) => {
-        return sum + (5 * (questionWeights[q.id] || 1.0));
+        const weight = questionWeights[q.id] || 1.0;
+        return sum + (5 * weight);
       }, 0);
+      
+      // Validate that we have questions for each stage
+      if (stageQuestions.length === 0) {
+        console.warn(`Warning: No questions found for stage ${stage}`);
+      }
     });
     
-    // Calculate percentage scores for each stage
+    // Calculate percentage scores for each stage with validation
     const stagePercentages: Record<string, number> = {};
     Object.keys(stageScores).forEach(stage => {
-      stagePercentages[stage] = maxScores[stage] > 0 
-        ? (stageScores[stage] / maxScores[stage]) * 100 
-        : 0;
+      if (maxScores[stage] <= 0) {
+        console.warn(`Warning: Maximum score for stage ${stage} is 0 or negative`);
+        stagePercentages[stage] = 0;
+      } else {
+        stagePercentages[stage] = (stageScores[stage] / maxScores[stage]) * 100;
+      }
     });
 
-    // Determine primary and secondary stages
+    console.log('Stage percentages:', stagePercentages);
+
+    // Enhanced stage determination with tie-breaking logic
     let primaryStage: 'pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance' = 'pre-contemplation';
     let primaryScore = stagePercentages['pre-contemplation'];
     let secondaryStage: ('pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance') | null = null;
     let secondaryScore = 0;
 
-    Object.entries(stagePercentages).forEach(([stage, score]) => {
-      if (score > primaryScore) {
-        secondaryStage = primaryStage;
-        secondaryScore = primaryScore;
-        primaryStage = stage as 'pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance';
-        primaryScore = score;
-      } else if (score > secondaryScore && stage !== primaryStage) {
-        secondaryStage = stage as 'pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance';
-        secondaryScore = score;
-      }
-    });
+    // Sort stages by score for more accurate determination
+    const sortedStages = Object.entries(stagePercentages)
+      .sort(([, a], [, b]) => b - a)
+      .map(([stage]) => stage as 'pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance');
 
-    // Calculate overall readiness score
+    // Handle ties by considering stage progression
+    if (sortedStages.length >= 2) {
+      const [first, second] = sortedStages;
+      const scoreDiff = stagePercentages[first] - stagePercentages[second];
+      
+      // If scores are very close (within 5%), consider stage progression
+      if (scoreDiff < 5) {
+        const stageOrder = ['pre-contemplation', 'contemplation', 'preparation', 'action', 'maintenance'] as const;
+        const firstIndex = stageOrder.indexOf(first);
+        const secondIndex = stageOrder.indexOf(second);
+        
+        // If stages are adjacent, prefer the more advanced stage
+        if (Math.abs(firstIndex - secondIndex) === 1) {
+          primaryStage = stageOrder[Math.max(firstIndex, secondIndex)];
+          secondaryStage = stageOrder[Math.min(firstIndex, secondIndex)];
+        } else {
+          primaryStage = first;
+          secondaryStage = second;
+        }
+      } else {
+        primaryStage = first;
+        secondaryStage = second;
+      }
+    }
+
+    primaryScore = stagePercentages[primaryStage];
+    secondaryScore = secondaryStage ? stagePercentages[secondaryStage] : 0;
+
+    // Enhanced readiness score calculation
     const stageWeights = {
       'pre-contemplation': 1,
       'contemplation': 2,
@@ -158,18 +194,24 @@ export const ReadinessAssessmentScreen: React.FC = () => {
       'maintenance': 5,
     };
     
+    // Calculate weighted average considering all stages
+    const totalWeight = Object.values(stageWeights).reduce((sum, weight) => sum + weight, 0);
     const readinessScore = Object.entries(stagePercentages).reduce((score, [stage, percentage]) => {
       return score + (percentage * stageWeights[stage as keyof typeof stageWeights]);
-    }, 0) / (100 * Object.keys(stageWeights).length);
+    }, 0) / (100 * totalWeight);
     
-    // Scale to 0-100
-    const scaledReadinessScore = Math.round((readinessScore / 5) * 100);
+    // Scale to 0-100 with validation
+    const scaledReadinessScore = Math.max(0, Math.min(100, Math.round((readinessScore / 5) * 100)));
     
-    // Calculate confidence level
+    // Enhanced confidence level calculation
     const confidenceGap = primaryScore - (secondaryScore || 0);
-    const confidenceLevel = Math.min(100, Math.round(confidenceGap * 1.5));
+    const baseConfidence = Math.min(100, Math.round(confidenceGap * 1.5));
     
-    // Create stage levels object
+    // Adjust confidence based on answer consistency
+    const answerConsistency = calculateAnswerConsistency(answers);
+    const confidenceLevel = Math.round((baseConfidence * 0.7) + (answerConsistency * 0.3));
+    
+    // Create stage levels object with enhanced information
     const stageLevels: Record<string, { score: number; percentage: number }> = {};
     Object.entries(stageScores).forEach(([stage, score]) => {
       stageLevels[stage] = {
@@ -178,8 +220,23 @@ export const ReadinessAssessmentScreen: React.FC = () => {
       };
     });
     
-    // Generate recommendations
-    const recommendations = generateRecommendations(primaryStage, secondaryStage, scaledReadinessScore, stageLevels);
+    // Generate recommendations with enhanced context
+    const recommendations = generateRecommendations(
+      primaryStage,
+      secondaryStage,
+      scaledReadinessScore,
+      stageLevels,
+      confidenceLevel
+    );
+    
+    console.log('Final assessment profile:', {
+      primaryStage,
+      secondaryStage,
+      readinessScore: scaledReadinessScore,
+      confidenceLevel,
+      stageLevels,
+      recommendations
+    });
     
     return {
       primaryStage,
@@ -191,50 +248,86 @@ export const ReadinessAssessmentScreen: React.FC = () => {
     };
   };
 
+  // Helper function to calculate answer consistency
+  const calculateAnswerConsistency = (answers: Record<string, number>): number => {
+    const answerValues = Object.values(answers);
+    if (answerValues.length === 0) return 0;
+    
+    // Calculate standard deviation of answers
+    const mean = answerValues.reduce((sum, val) => sum + val, 0) / answerValues.length;
+    const squaredDiffs = answerValues.map(val => Math.pow(val - mean, 2));
+    const variance = squaredDiffs.reduce((sum, val) => sum + val, 0) / answerValues.length;
+    const stdDev = Math.sqrt(variance);
+    
+    // Convert to consistency score (0-100)
+    // Lower standard deviation = higher consistency
+    const maxStdDev = 2; // Maximum expected standard deviation
+    const consistencyScore = Math.max(0, Math.min(100, 
+      Math.round((1 - (stdDev / maxStdDev)) * 100)
+    ));
+    
+    return consistencyScore;
+  };
+
+  // Enhanced recommendation generation
   const generateRecommendations = (
-    primaryStage: string, 
-    secondaryStage: string | null, 
+    primaryStage: string,
+    secondaryStage: string | null,
     readinessScore: number,
-    stageLevels: Record<string, { score: number; percentage: number }>
+    stageLevels: Record<string, { score: number; percentage: number }>,
+    confidenceLevel: number
   ): string[] => {
     const recommendations: string[] = [];
     
-    // Base recommendations on primary stage
+    // Base recommendations on primary stage with enhanced context
     switch (primaryStage) {
       case 'pre-contemplation':
         recommendations.push('Focus on raising awareness about your drinking patterns');
         recommendations.push('Track your drinking to identify patterns without pressure to change');
+        if (confidenceLevel < 40) {
+          recommendations.push('Explore the benefits of reduced drinking at your own pace');
+        }
         break;
       case 'contemplation':
         recommendations.push('Consider the pros and cons of changing your drinking habits');
         recommendations.push('Set small goals to build confidence in your ability to change');
+        if (secondaryStage === 'preparation') {
+          recommendations.push('Start thinking about specific strategies that might work for you');
+        }
         break;
       case 'preparation':
         recommendations.push('Create a specific plan for reducing your drinking');
         recommendations.push('Identify triggers and develop strategies to handle them');
+        if (readinessScore > 60) {
+          recommendations.push('Set a specific start date for implementing your plan');
+        }
         break;
       case 'action':
         recommendations.push('Build routines that support your reduced drinking goals');
         recommendations.push('Connect with others who support your goals');
+        if (confidenceLevel > 70) {
+          recommendations.push('Share your success strategies with others who might benefit');
+        }
         break;
       case 'maintenance':
         recommendations.push('Focus on preventing relapse by identifying high-risk situations');
         recommendations.push('Celebrate your progress and reflect on the benefits of reduced drinking');
+        if (stageLevels['action'].percentage > 60) {
+          recommendations.push('Document what strategies have worked best for you');
+        }
         break;
-    }
-    
-    // Add recommendations based on secondary stage
-    if (secondaryStage) {
-      if (primaryStage === 'contemplation' && secondaryStage === 'preparation') {
-        recommendations.push('You\'re almost ready to take action - try setting a specific start date');
-      } else if (primaryStage === 'action' && secondaryStage === 'preparation') {
-        recommendations.push('Continue strengthening your plan while taking action');
-      }
     }
     
     // Add recommendations based on pattern analysis
     if (stageLevels['action'].percentage > 60 && stageLevels['maintenance'].percentage < 40) {
       recommendations.push('Focus on making your changes sustainable for the long term');
+    }
+    
+    // Add confidence-based recommendations
+    if (confidenceLevel < 40) {
+      recommendations.push('Build confidence through small, achievable goals');
+    } else if (confidenceLevel > 80) {
+      recommendations.push('Use your high confidence to help others on similar journeys');
     }
     
     // Limit to 3 most relevant recommendations
@@ -288,8 +381,8 @@ export const ReadinessAssessmentScreen: React.FC = () => {
 
       console.log('Saving readiness assessment for user:', currentUser.id);
       
-      // Save assessment using the storage service
-      const savedAssessment = await storage.readinessAssessment.add({
+      // Use the AppContext's addReadinessAssessment method instead of directly using storage
+      const savedAssessment = await addReadinessAssessment({
         userId: currentUser.id,
         primaryStage: profile.primaryStage,
         secondaryStage: profile.secondaryStage,
@@ -302,13 +395,9 @@ export const ReadinessAssessmentScreen: React.FC = () => {
 
       console.log('Readiness assessment saved successfully');
       
-      // Verify the data was saved correctly
-      const verifiedAssessment = await storage.readinessAssessment.get(currentUser.id);
-      if (!verifiedAssessment) {
-        throw new Error('Failed to verify assessment data was saved');
-      }
-      
-      console.log('Verified assessment data:', verifiedAssessment);
+      // Set isAuthenticated to true after assessment is completed
+      setIsAuthenticated(true);
+      console.log('Authentication state set to true');
       
       // Show success message with assessment details
       Alert.alert(
@@ -318,10 +407,6 @@ export const ReadinessAssessmentScreen: React.FC = () => {
           {
             text: 'Continue',
             onPress: () => {
-              // Set isAuthenticated to true after assessment is completed
-              setIsAuthenticated(true);
-              console.log('Authentication state set to true');
-
               // Navigate to the main app
               navigation.reset({
                 index: 0,

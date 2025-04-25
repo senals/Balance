@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { IBudget, IBudgetDocument } from '../models/Budget';
 
 // Storage keys
 export const STORAGE_KEYS = {
@@ -219,7 +220,6 @@ export const storage = {
           id: Date.now().toString(),
           email,
           password,
-          name,
           createdAt: now,
           updatedAt: now,
         };
@@ -426,40 +426,58 @@ export const storage = {
   },
 
   budget: {
-    async get(userId: string): Promise<BudgetData> {
-      const budget = await storage.get<BudgetData>(storage.getUserKey(STORAGE_KEYS.BUDGET, userId));
+    async get(userId: string): Promise<IBudget | null> {
+      const budget = await storage.get<IBudget>(storage.getUserKey(STORAGE_KEYS.BUDGET, userId));
       return budget || {
-        dailyBudget: 15,
-        weeklyBudget: 105,
-        monthlyBudget: 450,
-        expenses: [],
         userId,
+        dailyBudget: 0,
+        weeklyBudget: 0,
+        monthlyBudget: 0,
+        expenses: [],
       };
     },
 
-    async addExpense(expense: Omit<BudgetData['expenses'][0], 'id'>): Promise<BudgetData['expenses'][0]> {
+    async save(budget: IBudget): Promise<void> {
+      const currentUser = await storage.auth.getCurrentUser();
+      if (!currentUser) {
+        throw new StorageError('User not authenticated', 'save', STORAGE_KEYS.BUDGET);
+      }
+      
+      await storage.set(storage.getUserKey(STORAGE_KEYS.BUDGET, currentUser.id), budget);
+    },
+
+    async addExpense(expense: { amount: number; category: string; date: string; notes?: string }): Promise<void> {
       const currentUser = await storage.auth.getCurrentUser();
       if (!currentUser) {
         throw new StorageError('User not authenticated', 'addExpense', STORAGE_KEYS.BUDGET);
       }
       
       const budget = await this.get(currentUser.id);
-      const newExpense = { ...expense, id: Date.now().toString() };
-      budget.expenses.push(newExpense);
-      await storage.set(storage.getUserKey(STORAGE_KEYS.BUDGET, currentUser.id), budget);
-      return newExpense;
+      if (!budget) {
+        throw new StorageError('Budget not found', 'addExpense', STORAGE_KEYS.BUDGET);
+      }
+      
+      budget.expenses.push({
+        ...expense,
+        date: new Date(expense.date)
+      });
+      
+      await this.save(budget);
     },
 
-    async update(updates: Partial<Omit<BudgetData, 'expenses'>>): Promise<BudgetData> {
+    async update(updates: Partial<IBudget>): Promise<void> {
       const currentUser = await storage.auth.getCurrentUser();
       if (!currentUser) {
         throw new StorageError('User not authenticated', 'update', STORAGE_KEYS.BUDGET);
       }
       
-      const current = await this.get(currentUser.id);
-      const updated = { ...current, ...updates };
-      await storage.set(storage.getUserKey(STORAGE_KEYS.BUDGET, currentUser.id), updated);
-      return updated;
+      const budget = await this.get(currentUser.id);
+      if (!budget) {
+        throw new StorageError('Budget not found', 'update', STORAGE_KEYS.BUDGET);
+      }
+      
+      const updatedBudget = { ...budget, ...updates };
+      await this.save(updatedBudget);
     },
   },
 

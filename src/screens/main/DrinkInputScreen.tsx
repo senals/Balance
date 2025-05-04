@@ -77,44 +77,14 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
         console.log('Saving drink:', newDrink);
 
         try {
-          // Try direct API call first to debug
-          console.log('Making direct API call to save drink...');
-          const directResponse = await fetch('http://localhost:5000/api/drinks', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              userId: currentUser.id,
-              type: newDrink.type,
-              amount: newDrink.quantity,
-              timestamp: new Date(newDrink.timestamp),
-              notes: newDrink.notes || '',
-              category: newDrink.category,
-              brand: newDrink.brand,
-              alcoholContent: newDrink.alcoholContent,
-              price: newDrink.price,
-              location: newDrink.location
-            }),
-          });
-          
-          if (!directResponse.ok) {
-            const errorData = await directResponse.json().catch(() => ({}));
-            console.error('Direct API call failed:', directResponse.status, errorData);
-            throw new Error(errorData.message || `API error: ${directResponse.status}`);
-          }
-          
-          const savedDrinkData = await directResponse.json();
-          console.log('Direct API call successful:', savedDrinkData);
-          
-          // Now use AppContext's addDrink which handles both local state and MongoDB
+          // Use AppContext's addDrink which handles both local state and MongoDB
           console.log('Calling addDrink with user ID:', currentUser.id);
           const savedDrink = await addDrink(newDrink);
           console.log('Drink saved successfully:', savedDrink);
 
           setSnackbarMessage('Drink saved successfully!');
         } catch (apiError) {
-          console.error('Error in direct API call:', apiError);
+          console.error('Error saving drink:', apiError);
           throw apiError;
         }
       } else {

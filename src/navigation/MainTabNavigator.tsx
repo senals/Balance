@@ -8,8 +8,19 @@ import { BudgetTrackerScreen } from '../screens/main/BudgetTrackerScreen';
 import { ProfileScreen } from '../screens/main/ProfileScreen';
 import { PreGamePlannerScreen } from '../screens/main/PreGamePlannerScreen';
 import { MainTabParamList } from './types';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+import { useNavigation } from '@react-navigation/native';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
+
+const DashboardScreenWithErrorBoundary = () => {
+  const navigation = useNavigation();
+  return (
+    <ErrorBoundary>
+      <DashboardScreen navigation={navigation} />
+    </ErrorBoundary>
+  );
+};
 
 export const MainTabNavigator = () => {
   return (
@@ -37,7 +48,7 @@ export const MainTabNavigator = () => {
     >
       <Tab.Screen
         name="Dashboard"
-        component={DashboardScreen}
+        component={DashboardScreenWithErrorBoundary}
         options={{
           tabBarIcon: ({ color, size }) => (
             <Icon name="view-dashboard" size={size} color={color} />

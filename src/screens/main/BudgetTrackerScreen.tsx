@@ -8,18 +8,75 @@ import { dataService } from '../../services/dataService';
 import { DrinkEntry } from '../../services/storage';
 import { IBudgetDocument } from '../../models/Budget';
 import { storage } from '../../services/storage';
+import { drinkApi } from '../../services/drinkApi';
 
 export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
   const { drinks, budget, error, currentUser, updateBudget, setDrinks } = useApp();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [apiAvailable, setApiAvailable] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
+  const [testTransaction, setTestTransaction] = useState<any>(null);
+
+  // Debug logging function
+  const addDebugLog = (message: string) => {
+    console.log(`[BudgetTracker Debug] ${message}`);
+    setDebugInfo(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`].slice(-10));
+  };
+
+  // Test transaction creation
+  const createTestTransaction = async () => {
+    if (!currentUser?.id) {
+      addDebugLog('Cannot create test transaction: No user ID');
+      return;
+    }
+
+    addDebugLog('Creating test transaction...');
+    const testDrink = {
+      category: 'Test',
+      type: 'Test Drink',
+      brand: 'Test Brand',
+      alcoholContent: 5,
+      quantity: 1,
+      price: 10.99,
+      timestamp: new Date().toISOString(),
+      userId: currentUser.id
+    };
+
+    try {
+      if (apiAvailable) {
+        addDebugLog('Attempting to save test transaction to API...');
+        const result = await dataService.transactions.add({
+          amount: testDrink.price,
+          type: 'expense',
+          category: testDrink.category,
+          description: `${testDrink.brand} - ${testDrink.type}`,
+          date: testDrink.timestamp,
+          userId: testDrink.userId
+        }, currentUser.id);
+        addDebugLog(`API Save Result: ${JSON.stringify(result)}`);
+        setTestTransaction(result);
+      } else {
+        addDebugLog('Attempting to save test transaction to local storage...');
+        const result = await storage.drinks.add(testDrink);
+        addDebugLog(`Local Storage Save Result: ${JSON.stringify(result)}`);
+        setTestTransaction(result);
+      }
+      addDebugLog('Test transaction created successfully');
+      // Refresh data after creating test transaction
+      fetchData();
+    } catch (error: any) {
+      addDebugLog(`Error creating test transaction: ${error.message}`);
+      console.error('Error creating test transaction:', error);
+    }
+  };
 
   // Check if API is available
   useEffect(() => {
     const checkApi = async () => {
       const isAvailable = await dataService.isApiAvailable();
       setApiAvailable(isAvailable);
+      addDebugLog(`API Available: ${isAvailable}`);
     };
     
     checkApi();
@@ -27,75 +84,87 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
 
   // Fetch data from API or local storage
   const fetchData = async () => {
-    if (!currentUser?.id) return;
+    if (!currentUser?.id) {
+      addDebugLog('No current user ID available');
+      return;
+    }
     
     setLoading(true);
+    addDebugLog(`Starting data fetch for user: ${currentUser.id}`);
+    
     try {
       // Check API availability first
       const isApiAvailable = await dataService.isApiAvailable();
       setApiAvailable(isApiAvailable);
+      addDebugLog(`API Check: ${isApiAvailable}`);
       
       if (isApiAvailable) {
-        // Fetch from API
-        const [transactions, apiBudget] = await Promise.all([
-          dataService.transactions.getAll(currentUser.id),
-          dataService.budget.get(currentUser.id)
-        ]);
-        
-        if (transactions) {
-          // Convert API transactions to drink format
-          const apiDrinks = Array.isArray(transactions) ? transactions.map((t: any) => ({
-            id: t._id || t.id,
-            category: t.category || 'Other',
-            type: t.type || 'Unknown',
-            brand: t.description || t.brand || 'Unknown',
-            alcoholContent: t.alcoholContent || 0,
-            quantity: t.quantity || 1,
-            price: t.amount || t.price || 0,
-            timestamp: t.date || t.timestamp || new Date().toISOString(),
-            userId: t.userId || currentUser.id
-          })) : [];
+        addDebugLog('Fetching from API...');
+        try {
+          // Get drinks from API
+          const apiDrinks = await drinkApi.getAll(currentUser.id);
+          addDebugLog(`Raw drinks response: ${JSON.stringify(apiDrinks)}`);
+          addDebugLog(`API Drinks: ${apiDrinks?.length || 0} items`);
           
           // Update drinks in context
           setDrinks(apiDrinks);
-        }
-        
-        if (apiBudget) {
-          // Convert to plain object before updating
-          const plainBudget = {
-            dailyBudget: apiBudget.dailyBudget,
-            weeklyBudget: apiBudget.weeklyBudget,
-            monthlyBudget: apiBudget.monthlyBudget,
-            userId: apiBudget.userId,
-            expenses: apiBudget.expenses.map(exp => ({
-              id: exp.id || String(Math.random()),
-              amount: exp.amount,
-              category: exp.category,
-              date: exp.date instanceof Date ? exp.date.toISOString() : exp.date,
-              notes: exp.notes
-            }))
-          };
-          updateBudget(plainBudget);
+          
+          // Get budget from API
+          const apiBudget = await dataService.budget.get(currentUser.id);
+          addDebugLog(`Raw budget response: ${JSON.stringify(apiBudget)}`);
+          addDebugLog(`API Budget: ${apiBudget ? 'Found' : 'Not found'}`);
+          
+          if (apiBudget) {
+            addDebugLog('Updating budget from API');
+            // Convert to plain object before updating
+            const plainBudget = {
+              dailyBudget: apiBudget.dailyBudget,
+              weeklyBudget: apiBudget.weeklyBudget,
+              monthlyBudget: apiBudget.monthlyBudget,
+              userId: apiBudget.userId,
+              expenses: apiBudget.expenses.map(exp => ({
+                id: exp.id || String(Math.random()),
+                amount: exp.amount,
+                category: exp.category,
+                date: exp.date instanceof Date ? exp.date.toISOString() : exp.date,
+                notes: exp.notes
+              }))
+            };
+            updateBudget(plainBudget);
+          }
+        } catch (error: any) {
+          addDebugLog(`Error in API operations: ${error.message}`);
+          console.error('Error in API operations:', error);
         }
       } else {
-        // Fallback to local storage
-        const [localDrinks, localBudget] = await Promise.all([
-          storage.drinks.getAll(currentUser.id),
-          storage.budget.get(currentUser.id)
-        ]);
-        
-        if (localDrinks) {
-          setDrinks(localDrinks);
-        }
-        
-        if (localBudget) {
-          updateBudget(localBudget);
+        addDebugLog('Falling back to local storage');
+        try {
+          const [localDrinks, localBudget] = await Promise.all([
+            storage.drinks.getAll(currentUser.id),
+            storage.budget.get(currentUser.id)
+          ]);
+          
+          addDebugLog(`Local drinks: ${localDrinks?.length || 0} items`);
+          addDebugLog(`Local budget: ${localBudget ? 'Found' : 'Not found'}`);
+          
+          if (localDrinks) {
+            setDrinks(localDrinks);
+          }
+          
+          if (localBudget) {
+            updateBudget(localBudget);
+          }
+        } catch (error: any) {
+          addDebugLog(`Error in local storage operations: ${error.message}`);
+          console.error('Error in local storage operations:', error);
         }
       }
-    } catch (error) {
+    } catch (error: any) {
+      addDebugLog(`Error fetching data: ${error.message}`);
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
+      addDebugLog('Data fetch completed');
     }
   };
 
@@ -214,6 +283,23 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
     >
+      {/* Debug Panel */}
+      <Card style={styles.debugCard}>
+        <Card.Content>
+          <Text style={styles.debugTitle}>Debug Information</Text>
+          {debugInfo.map((log, index) => (
+            <Text key={index} style={styles.debugText}>{log}</Text>
+          ))}
+          <Button 
+            mode="contained" 
+            onPress={createTestTransaction}
+            style={styles.testButton}
+          >
+            Create Test Transaction
+          </Button>
+        </Card.Content>
+      </Card>
+
       {apiAvailable && (
         <Card style={styles.apiStatusCard}>
           <Card.Content style={styles.apiStatusContent}>
@@ -519,5 +605,24 @@ const styles = StyleSheet.create({
     color: colors.text,
     opacity: 0.7,
     marginBottom: 8,
+  },
+  debugCard: {
+    margin: 10,
+    backgroundColor: '#f5f5f5',
+  },
+  debugTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    color: '#666',
+  },
+  debugText: {
+    fontSize: 10,
+    color: '#666',
+    marginBottom: 2,
+  },
+  testButton: {
+    marginTop: 10,
+    backgroundColor: colors.primary,
   },
 }); 

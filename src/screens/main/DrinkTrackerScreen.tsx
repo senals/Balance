@@ -6,81 +6,280 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../context/AppContext';
 import { drinkApi } from '../../services/drinkApi';
 import { LineChart } from 'react-native-chart-kit';
+import { DrinkEntry } from '../../services/storage';
+import { storage } from '../../services/storage';
+
+// Error Boundary Component
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>Something went wrong</Text>
+          <Text style={styles.errorMessage}>{this.state.error?.message}</Text>
+          <Button mode="contained" onPress={() => this.setState({ hasError: false, error: null })}>
+            Try Again
+          </Button>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+// Helper function for generating unique keys
+const generateUniqueKey = (item: any, type: string, index: number): string => {
+  if (item?.id) return `item-${item.id}`;
+  
+  const timestamp = item?.timestamp || item?.date || Date.now();
+  const itemType = item?.type || type || 'unknown';
+  const uniqueId = `${itemType}-${timestamp}-${index}`;
+  
+  return uniqueId;
+};
 
 export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
-  const { drinks, settings, error, currentUser, addDrink, updateDrink, removeDrink } = useApp();
-  const [loading, setLoading] = useState(false);
+  const { drinks = [], settings, error, currentUser, addDrink, updateDrink, removeDrink, setDrinks } = useApp();
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [apiAvailable, setApiAvailable] = useState(false);
-  const [localDrinks, setLocalDrinks] = useState(drinks);
-  const [showDevTools, setShowDevTools] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
+  const [errorState, setErrorState] = useState<string | null>(null);
 
-  // Check if API is available
-  useEffect(() => {
-    const checkApi = async () => {
+  // Enhanced debug logging function
+  const addDebugLog = (message: string, data?: any) => {
+    const timestamp = new Date().toLocaleTimeString();
+    let logMessage = `[${timestamp}] ${message}`;
+    
+    if (data) {
       try {
-        console.log('Checking API availability...');
+        const dataString = typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data);
+        logMessage += `\nData: ${dataString}`;
+      } catch (e) {
+        logMessage += `\nData: [Unable to stringify]`;
+      }
+    }
+    
+    console.log(logMessage);
+    setDebugInfo(prev => [logMessage, ...prev].slice(0, 20));
+  };
+
+  // Validate drink data
+  const validateDrink = (drink: any) => {
+    const requiredFields = ['category', 'type', 'brand', 'alcoholContent', 'quantity', 'timestamp'];
+    const missingFields = requiredFields.filter(field => !drink[field]);
+    const invalidFields = [];
+    
+    if (typeof drink.alcoholContent !== 'number' || drink.alcoholContent < 0 || drink.alcoholContent > 100) {
+      invalidFields.push('alcoholContent');
+    }
+    if (typeof drink.quantity !== 'number' || drink.quantity <= 0) {
+      invalidFields.push('quantity');
+    }
+    if (drink.price && (typeof drink.price !== 'number' || drink.price < 0)) {
+      invalidFields.push('price');
+    }
+    
+    const timestamp = new Date(drink.timestamp);
+    if (isNaN(timestamp.getTime())) {
+      invalidFields.push('timestamp');
+    }
+    
+    return {
+      isValid: missingFields.length === 0 && invalidFields.length === 0,
+      missingFields,
+      invalidFields,
+      timestamp: timestamp.toISOString()
+    };
+  };
+
+  // Analyze drinks data
+  const analyzeDrinks = (drinks: any[]) => {
+    const analysis = {
+      totalDrinks: drinks.length,
+      totalQuantity: drinks.reduce((sum, drink) => sum + drink.quantity, 0),
+      categories: {} as Record<string, number>,
+      types: {} as Record<string, number>,
+      brands: {} as Record<string, number>,
+      timeRange: {
+        start: new Date(Math.min(...drinks.map(d => new Date(d.timestamp).getTime()))),
+        end: new Date(Math.max(...drinks.map(d => new Date(d.timestamp).getTime())))
+      },
+      validation: drinks.map(validateDrink)
+    };
+
+    drinks.forEach(drink => {
+      analysis.categories[drink.category] = (analysis.categories[drink.category] || 0) + drink.quantity;
+      analysis.types[drink.type] = (analysis.types[drink.type] || 0) + drink.quantity;
+      analysis.brands[drink.brand] = (analysis.brands[drink.brand] || 0) + drink.quantity;
+    });
+
+    return analysis;
+  };
+
+  // Initialize component
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        addDebugLog('Initializing drink tracker...', {
+          currentUser: currentUser?.id,
+          drinksCount: drinks.length,
+          settings: settings ? 'Available' : 'Not available',
+          currentTime: new Date().toISOString()
+        });
+        
+        setLoading(true);
+        setErrorState(null);
+
+        // Check API availability
         const response = await fetch('http://localhost:5000/api/health');
-        console.log('API health check response:', response.status);
-        setApiAvailable(response.ok);
-      } catch (error) {
-        console.error('API health check failed:', error);
-        setApiAvailable(false);
+        const isApiAvailable = response.status === 200;
+        setApiAvailable(isApiAvailable);
+        addDebugLog('API health check', {
+          status: response.status,
+          available: isApiAvailable,
+          url: 'http://localhost:5000/api/health',
+          responseTime: new Date().toISOString()
+        });
+
+        // Load initial data
+        if (isApiAvailable && currentUser?.id) {
+          addDebugLog(`Fetching drinks for user ${currentUser.id}`);
+          const apiDrinks = await drinkApi.getAll(currentUser.id);
+          
+          if (Array.isArray(apiDrinks)) {
+            const analysis = analyzeDrinks(apiDrinks);
+            addDebugLog('API drinks analysis', {
+              totalDrinks: analysis.totalDrinks,
+              totalQuantity: analysis.totalQuantity,
+              categories: analysis.categories,
+              types: analysis.types,
+              brands: analysis.brands,
+              timeRange: {
+                start: analysis.timeRange.start.toISOString(),
+                end: analysis.timeRange.end.toISOString(),
+                duration: `${Math.round((analysis.timeRange.end.getTime() - analysis.timeRange.start.getTime()) / (1000 * 60 * 60 * 24))} days`
+              },
+              validation: {
+                valid: analysis.validation.filter(v => v.isValid).length,
+                invalid: analysis.validation.filter(v => !v.isValid).length,
+                issues: analysis.validation
+                  .filter(v => !v.isValid)
+                  .map(v => ({
+                    missingFields: v.missingFields,
+                    invalidFields: v.invalidFields
+                  }))
+              }
+            });
+            
+            setDrinks(apiDrinks);
+            addDebugLog(`Loaded ${apiDrinks.length} drinks from API`);
+          } else {
+            throw new Error('Invalid response format from API');
+          }
+        } else {
+          addDebugLog('Using local storage for drinks', {
+            reason: !isApiAvailable ? 'API unavailable' : 'No user ID',
+            userId: currentUser?.id,
+            currentTime: new Date().toISOString()
+          });
+          
+          const localDrinks = await storage.drinks.getAll(currentUser?.id || '');
+          const analysis = analyzeDrinks(localDrinks);
+          addDebugLog('Local storage drinks analysis', {
+            totalDrinks: analysis.totalDrinks,
+            totalQuantity: analysis.totalQuantity,
+            categories: analysis.categories,
+            types: analysis.types,
+            brands: analysis.brands,
+            timeRange: {
+              start: analysis.timeRange.start.toISOString(),
+              end: analysis.timeRange.end.toISOString(),
+              duration: `${Math.round((analysis.timeRange.end.getTime() - analysis.timeRange.start.getTime()) / (1000 * 60 * 60 * 24))} days`
+            },
+            validation: {
+              valid: analysis.validation.filter(v => v.isValid).length,
+              invalid: analysis.validation.filter(v => !v.isValid).length,
+              issues: analysis.validation
+                .filter(v => !v.isValid)
+                .map(v => ({
+                  missingFields: v.missingFields,
+                  invalidFields: v.invalidFields
+                }))
+            }
+          });
+          
+          setDrinks(localDrinks);
+          addDebugLog(`Loaded ${localDrinks.length} drinks from local storage`);
+        }
+
+        setLoading(false);
+        addDebugLog('Drink tracker initialized successfully');
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        addDebugLog('Initialization error', {
+          error: errorMessage,
+          stack: error instanceof Error ? error.stack : undefined,
+          currentState: {
+            loading,
+            apiAvailable,
+            drinksCount: drinks.length,
+            userId: currentUser?.id,
+            currentTime: new Date().toISOString()
+          }
+        });
+        
+        setErrorState('Failed to load drinks. Please try again.');
+        setLoading(false);
       }
     };
-    
-    checkApi();
-  }, []);
 
-  // Fetch drinks from API
-  const fetchDrinks = async () => {
-    if (!currentUser?.id) {
-      console.log('No current user ID available, skipping drink fetch');
-      return;
-    }
-    
-    console.log('Fetching drinks for user:', currentUser.id);
-    setLoading(true);
-    try {
-      // Fetch drinks directly from MongoDB using drinkApi
-      console.log('Calling drinkApi.getAll...');
-      const userDrinks = await drinkApi.getAll(currentUser.id);
-      console.log('Received drinks from API:', userDrinks.length);
-      
-      // Update local drinks state
-      setLocalDrinks(userDrinks);
-      console.log('Updated local drinks state');
-    } catch (error) {
-      console.error('Error fetching drinks:', error);
-      Alert.alert(
-        'Error Fetching Drinks',
-        'There was a problem loading your drink data. Please try again later.'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Initial data fetch
-  useEffect(() => {
-    fetchDrinks();
+    initialize();
   }, [currentUser?.id]);
 
-  // Update localDrinks when drinks prop changes
-  useEffect(() => {
-    setLocalDrinks(drinks);
-  }, [drinks]);
-
   // Handle refresh
-  const onRefresh = async () => {
+  const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
-    await fetchDrinks();
-    setRefreshing(false);
-  };
+    setErrorState(null);
+    try {
+      addDebugLog('Refreshing drinks data...');
+      
+      if (apiAvailable && currentUser?.id) {
+        const apiDrinks = await drinkApi.getAll(currentUser.id);
+        if (Array.isArray(apiDrinks)) {
+          setDrinks(apiDrinks);
+          addDebugLog(`Refreshed ${apiDrinks.length} drinks from API`);
+        } else {
+          throw new Error('Invalid response format from API');
+        }
+      } else {
+        const localDrinks = await storage.drinks.getAll(currentUser?.id || '');
+        setDrinks(localDrinks);
+        addDebugLog(`Refreshed ${localDrinks.length} drinks from local storage`);
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      addDebugLog(`Refresh error: ${errorMessage}`);
+      setErrorState('Failed to refresh drinks. Please try again.');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [apiAvailable, currentUser?.id]);
 
   // Calculate daily consumption
   const today = new Date().toISOString().split('T')[0];
-  const dailyDrinks = localDrinks.filter(drink => 
+  const dailyDrinks = drinks.filter(drink => 
     drink.timestamp.startsWith(today)
   );
   const dailyConsumption = dailyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
@@ -89,7 +288,7 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
   // Calculate weekly consumption
   const weekStart = new Date();
   weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-  const weeklyDrinks = localDrinks.filter(drink => 
+  const weeklyDrinks = drinks.filter(drink => 
     new Date(drink.timestamp) >= weekStart
   );
   const weeklyConsumption = weeklyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
@@ -97,21 +296,26 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
   // Calculate monthly consumption
   const monthStart = new Date();
   monthStart.setDate(1);
-  const monthlyDrinks = localDrinks.filter(drink => 
+  const monthlyDrinks = drinks.filter(drink => 
     new Date(drink.timestamp) >= monthStart
   );
   const monthlyConsumption = monthlyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
 
-  // Get recent drinks
-  const recentDrinks = [...localDrinks]
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, 3)
-    .map(drink => ({
-      id: drink.id,
-      drink: `${drink.brand} (${drink.quantity}x)`,
-      date: new Date(drink.timestamp).toLocaleDateString(),
-      time: new Date(drink.timestamp).toLocaleTimeString(),
-    }));
+  // Get recent drinks with proper key generation
+  const recentDrinks = React.useMemo(() => {
+    const validDrinks = drinks
+      .filter(drink => drink && (drink.id || drink.timestamp))
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 3)
+      .map((drink, index) => ({
+        id: generateUniqueKey(drink, 'drink', index),
+        drink: `${drink.brand} (${drink.quantity}x)`,
+        date: new Date(drink.timestamp).toLocaleDateString(),
+        time: new Date(drink.timestamp).toLocaleTimeString(),
+      }));
+    
+    return validDrinks;
+  }, [drinks]);
   
   const progressPercentage = dailyConsumption / dailyLimit;
   
@@ -127,114 +331,13 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
     console.log('Editing drink with ID:', drinkId);
     
     // Check if the drink exists
-    const drinkExists = localDrinks.some(drink => drink.id === drinkId);
+    const drinkExists = drinks.some(drink => drink.id === drinkId);
     if (!drinkExists) {
       console.error('Drink not found with ID:', drinkId);
       return;
     }
     
     navigation.navigate('EditDrink', { drinkId });
-  };
-
-  // Dev tools functions
-  const handleResetDrinks = async () => {
-    if (!currentUser?.id) return;
-    
-    Alert.alert(
-      'Reset Drinks Data',
-      'Are you sure you want to delete all drinks data? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading(true);
-              
-              // Delete all drinks from MongoDB
-              for (const drink of localDrinks) {
-                await drinkApi.delete(drink.id);
-              }
-              
-              // Refresh drinks list
-              await fetchDrinks();
-              
-              Alert.alert('Success', 'All drinks data has been reset.');
-            } catch (error) {
-              console.error('Error resetting drinks:', error);
-              Alert.alert('Error', 'Failed to reset drinks data.');
-            } finally {
-              setLoading(false);
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const handleAddSampleDrinks = async () => {
-    if (!currentUser?.id) return;
-    
-    try {
-      setLoading(true);
-      
-      // Sample drinks data
-      const sampleDrinks = [
-        {
-          category: 'beer',
-          type: 'lager',
-          brand: 'Heineken',
-          alcoholContent: 5,
-          quantity: 2,
-          price: 4.50,
-          location: 'Local Pub',
-          notes: 'Sample drink 1',
-          timestamp: new Date().toISOString(),
-        },
-        {
-          category: 'spirit',
-          type: 'vodka',
-          brand: 'Grey Goose',
-          alcoholContent: 40,
-          quantity: 1,
-          price: 8.00,
-          location: 'Bar',
-          notes: 'Sample drink 2',
-          timestamp: new Date(Date.now() - 86400000).toISOString(), // Yesterday
-        },
-        {
-          category: 'cocktail',
-          type: 'classic',
-          brand: 'Mojito',
-          alcoholContent: 15,
-          quantity: 1,
-          price: 10.00,
-          location: 'Cocktail Bar',
-          notes: 'Sample drink 3',
-          timestamp: new Date(Date.now() - 172800000).toISOString(), // 2 days ago
-        }
-      ];
-      
-      // Add sample drinks to MongoDB
-      for (const drink of sampleDrinks) {
-        await drinkApi.create(drink, currentUser.id);
-      }
-      
-      // Refresh drinks list
-      await fetchDrinks();
-      
-      Alert.alert('Success', 'Sample drinks have been added.');
-    } catch (error) {
-      console.error('Error adding sample drinks:', error);
-      Alert.alert('Error', 'Failed to add sample drinks.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleDevTools = () => {
-    setShowDevTools(!showDevTools);
   };
 
   // Calculate weekly consumption data for chart
@@ -246,9 +349,11 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
       const dayStart = new Date(date.setHours(0, 0, 0, 0)).toISOString();
       const dayEnd = new Date(date.setHours(23, 59, 59, 999)).toISOString();
       
-      return localDrinks.filter(drink => 
+      const dayDrinks = drinks.filter(drink => 
         drink.timestamp >= dayStart && drink.timestamp <= dayEnd
-      ).reduce((sum, drink) => sum + drink.quantity, 0);
+      );
+      
+      return dayDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
     });
     
     return {
@@ -269,7 +374,7 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
 
   const weeklyTrend = calculateTrend(
     weeklyConsumption,
-    localDrinks.filter(drink => {
+    drinks.filter(drink => {
       const date = new Date(drink.timestamp);
       const weekAgo = new Date();
       weekAgo.setDate(weekAgo.getDate() - 7);
@@ -279,7 +384,7 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
 
   const monthlyTrend = calculateTrend(
     monthlyConsumption,
-    localDrinks.filter(drink => {
+    drinks.filter(drink => {
       const date = new Date(drink.timestamp);
       const monthAgo = new Date();
       monthAgo.setMonth(monthAgo.getMonth() - 1);
@@ -288,103 +393,124 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
   );
 
   return (
-    <ScrollView 
-      style={styles.container}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={[colors.primary]}
-        />
-      }
-    >
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading drinks...</Text>
-        </View>
-      ) : (
-        <>
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.title}>Drink Tracker</Text>
-              <Text style={styles.subtitle}>Monitor your consumption</Text>
-            </View>
-            <IconButton
-              icon="cog"
-              size={24}
-              onPress={toggleDevTools}
-              style={styles.devToolsButton}
-            />
+    <ErrorBoundary>
+      <ScrollView 
+        style={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        {errorState && (
+          <Card style={styles.errorCard}>
+            <Card.Content>
+              <Text style={styles.errorText}>{errorState}</Text>
+            </Card.Content>
+          </Card>
+        )}
+
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Loading drinks...</Text>
           </View>
-          
-          {showDevTools && (
-            <Card style={styles.devToolsCard}>
+        ) : (
+          <>
+            <Card style={styles.debugCard}>
               <Card.Content>
-                <Text style={styles.devToolsTitle}>Developer Tools</Text>
-                <View style={styles.devToolsButtons}>
+                <View style={styles.debugHeader}>
+                  <Text style={styles.debugTitle}>Debug Information</Text>
                   <Button 
-                    mode="outlined" 
-                    onPress={handleResetDrinks}
-                    style={styles.devToolButton}
-                    textColor={colors.error}
+                    mode="text"
+                    onPress={() => setShowDebug(!showDebug)}
+                    icon={showDebug ? "chevron-up" : "chevron-down"}
                   >
-                    Reset All Drinks
-                  </Button>
-                  <Button 
-                    mode="outlined" 
-                    onPress={handleAddSampleDrinks}
-                    style={styles.devToolButton}
-                  >
-                    Add Sample Drinks
+                    {showDebug ? "Hide" : "Show"}
                   </Button>
                 </View>
-                <Text style={styles.devToolsInfo}>
-                  API Status: {apiAvailable ? 'Connected' : 'Disconnected'}
-                </Text>
-                <Text style={styles.devToolsInfo}>
-                  Total Drinks: {localDrinks.length}
-                </Text>
-              </Card.Content>
-            </Card>
-          )}
-          
-          <View style={styles.content}>
-            {/* Daily Consumption Visual */}
-            <Card style={styles.glassCard}>
-              <Card.Content style={styles.glassContent}>
-                <View style={styles.glassContainer}>
-                  <MaterialCommunityIcons 
-                    name="glass-cocktail" 
-                    size={100} 
-                    color={colors.primary} 
-                  />
-                  <View style={styles.glassFillContainer}>
-                    <View 
-                      style={[
-                        styles.glassFill, 
-                        { height: `${Math.min(progressPercentage * 100, 100)}%` }
-                      ]} 
-                    />
-                  </View>
-                </View>
-                <View style={styles.consumptionInfo}>
-                  <Text style={styles.consumptionAmount}>{dailyConsumption}/{dailyLimit}</Text>
-                  <Text style={styles.consumptionLabel}>Daily Drinks</Text>
-                  <ProgressBar 
-                    progress={progressPercentage} 
-                    color={progressPercentage > 0.8 ? colors.error : colors.primary} 
-                    style={styles.progressBar} 
-                  />
-                  <Text style={styles.remainingAmount}>{dailyLimit - dailyConsumption} remaining</Text>
-                </View>
+                {showDebug && (
+                  <>
+                    <View style={styles.debugSection}>
+                      <Text style={styles.debugSubtitle}>Current State</Text>
+                      <Text style={styles.debugText}>
+                        User ID: {currentUser?.id || 'Not available'}{'\n'}
+                        API Available: {apiAvailable ? 'Yes' : 'No'}{'\n'}
+                        Drinks Count: {drinks.length}{'\n'}
+                        Loading: {loading ? 'Yes' : 'No'}{'\n'}
+                        Refreshing: {refreshing ? 'Yes' : 'No'}{'\n'}
+                        Error: {errorState || 'None'}
+                      </Text>
+                    </View>
+                    <View style={styles.debugSection}>
+                      <Text style={styles.debugSubtitle}>Recent Logs</Text>
+                      {debugInfo.map((log, index) => (
+                        <Text key={`debug-${index}-${Date.now()}`} style={styles.debugText}>
+                          {log}
+                        </Text>
+                      ))}
+                    </View>
+                  </>
+                )}
               </Card.Content>
             </Card>
 
-            {/* Weekly Trend Chart */}
+            <View style={styles.header}>
+              <Text style={styles.title}>Drink Tracker</Text>
+              <Button
+                mode="contained"
+                icon="plus"
+                onPress={() => navigation.navigate('DrinkInput')}
+                style={styles.addButton}
+              >
+                Add Drink
+              </Button>
+            </View>
+
+            <Card style={styles.progressCard}>
+              <Card.Content>
+                <Text style={styles.progressTitle}>Daily Progress</Text>
+                <ProgressBar
+                  progress={progressPercentage}
+                  color={progressPercentage >= 1 ? colors.error : colors.primary}
+                  style={styles.progressBar}
+                />
+                <Text style={styles.progressText}>
+                  {dailyConsumption} / {dailyLimit} drinks today
+                </Text>
+              </Card.Content>
+            </Card>
+
+            <View style={styles.statsContainer}>
+              <Card style={styles.statCard}>
+                <Card.Content>
+                  <Text style={styles.statTitle}>Weekly</Text>
+                  <Text style={styles.statValue}>{weeklyConsumption}</Text>
+                  <Text style={styles.statLabel}>drinks this week</Text>
+                  <Text style={styles.trendText}>
+                    {weeklyTrend > 0 ? '↑' : weeklyTrend < 0 ? '↓' : '→'} {Math.abs(weeklyTrend).toFixed(1)}%
+                  </Text>
+                </Card.Content>
+              </Card>
+
+              <Card style={styles.statCard}>
+                <Card.Content>
+                  <Text style={styles.statTitle}>Monthly</Text>
+                  <Text style={styles.statValue}>{monthlyConsumption}</Text>
+                  <Text style={styles.statLabel}>drinks this month</Text>
+                  <Text style={styles.trendText}>
+                    {monthlyTrend > 0 ? '↑' : monthlyTrend < 0 ? '↓' : '→'} {Math.abs(monthlyTrend).toFixed(1)}%
+                  </Text>
+                </Card.Content>
+              </Card>
+            </View>
+
             <Card style={styles.chartCard}>
               <Card.Content>
-                <Text style={styles.sectionTitle}>Weekly Trend</Text>
+                <Text style={styles.chartTitle}>Weekly Consumption</Text>
                 <LineChart
                   data={getWeeklyData()}
                   width={Dimensions.get('window').width - 48}
@@ -397,7 +523,7 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
                     color: (opacity = 1) => colors.primary,
                     labelColor: (opacity = 1) => colors.text,
                     style: {
-                      borderRadius: 16
+                      borderRadius: 16,
                     },
                     propsForDots: {
                       r: "6",
@@ -410,107 +536,36 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
                 />
               </Card.Content>
             </Card>
-            
-            {/* Consumption Summary */}
-            <View style={styles.summaryRow}>
-              <Card style={styles.summaryCard}>
-                <Card.Content>
-                  <Text style={styles.sectionTitle}>Weekly Summary</Text>
-                  <View style={styles.summaryContent}>
-                    <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Total</Text>
-                      <Text style={styles.summaryValue}>{weeklyConsumption}</Text>
-                      <View style={styles.trendContainer}>
-                        <MaterialCommunityIcons 
-                          name={weeklyTrend >= 0 ? "trending-up" : "trending-down"} 
-                          size={16} 
-                          color={weeklyTrend >= 0 ? colors.success : colors.error} 
-                        />
-                        <Text style={[styles.trendText, { color: weeklyTrend >= 0 ? colors.success : colors.error }]}>
-                          {Math.abs(weeklyTrend).toFixed(1)}%
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Daily Average</Text>
-                      <Text style={styles.summaryValue}>
-                        {(weeklyConsumption / 7).toFixed(1)}
-                      </Text>
-                    </View>
-                  </View>
-                </Card.Content>
-              </Card>
-              
-              <Card style={styles.summaryCard}>
-                <Card.Content>
-                  <Text style={styles.sectionTitle}>Monthly Summary</Text>
-                  <View style={styles.summaryContent}>
-                    <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Total</Text>
-                      <Text style={styles.summaryValue}>{monthlyConsumption}</Text>
-                      <View style={styles.trendContainer}>
-                        <MaterialCommunityIcons 
-                          name={monthlyTrend >= 0 ? "trending-up" : "trending-down"} 
-                          size={16} 
-                          color={monthlyTrend >= 0 ? colors.success : colors.error} 
-                        />
-                        <Text style={[styles.trendText, { color: monthlyTrend >= 0 ? colors.success : colors.error }]}>
-                          {Math.abs(monthlyTrend).toFixed(1)}%
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Daily Average</Text>
-                      <Text style={styles.summaryValue}>
-                        {(monthlyConsumption / new Date().getDate()).toFixed(1)}
-                      </Text>
-                    </View>
-                  </View>
-                </Card.Content>
-              </Card>
-            </View>
-            
-            {/* Recent Drinks */}
-            <Card style={styles.recentCard}>
+
+            <Card style={styles.recentDrinksCard}>
               <Card.Content>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Recent Drinks</Text>
-                  <Button 
-                    mode="contained" 
-                    onPress={handleAddDrink}
-                    style={styles.addButton}
-                    compact
-                  >
-                    Add Drink
-                  </Button>
-                </View>
+                <Text style={styles.sectionTitle}>Recent Drinks</Text>
                 {recentDrinks.length > 0 ? (
-                  recentDrinks.map(drink => (
-                    <View key={drink.id} style={styles.drinkItem}>
-                      <View style={styles.drinkInfo}>
-                        <Text style={styles.drinkDescription}>{drink.drink}</Text>
-                        <Text style={styles.drinkDateTime}>{drink.date} {drink.time}</Text>
+                  recentDrinks.map((drink) => (
+                    <View key={drink.id} style={styles.recentDrinkItem}>
+                      <View style={styles.recentDrinkInfo}>
+                        <Text style={styles.recentDrinkName}>{drink.drink}</Text>
+                        <Text style={styles.recentDrinkTime}>
+                          {drink.date} at {drink.time}
+                        </Text>
                       </View>
-                      <View style={styles.drinkActions}>
-                        <IconButton
-                          icon="pencil"
-                          size={20}
-                          onPress={() => handleEditDrink(drink.id)}
-                          iconColor={colors.primary}
-                          style={styles.editButton}
-                        />
-                      </View>
+                      <IconButton
+                        icon="pencil"
+                        size={20}
+                        onPress={() => handleEditDrink(drink.id)}
+                        style={styles.editButton}
+                      />
                     </View>
                   ))
                 ) : (
-                  <Text style={styles.emptyMessage}>No drinks recorded yet</Text>
+                  <Text style={styles.emptyText}>No drinks recorded yet</Text>
                 )}
               </Card.Content>
             </Card>
-          </View>
-        </>
-      )}
-    </ScrollView>
+          </>
+        )}
+      </ScrollView>
+    </ErrorBoundary>
   );
 };
 
@@ -525,138 +580,90 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  loadingText: {
-    marginTop: 10,
-    color: colors.text,
-  },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     padding: 16,
     paddingTop: 40,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
     color: colors.primary,
   },
-  subtitle: {
-    fontSize: 14,
-    color: colors.text,
-    opacity: 0.7,
+  addButton: {
+    marginLeft: 8,
   },
-  devToolsButton: {
-    marginLeft: 'auto',
-  },
-  devToolsCard: {
-    margin: 16,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    elevation: 2,
-  },
-  devToolsTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.text,
-    marginBottom: 12,
-  },
-  devToolsButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  devToolButton: {
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  devToolsInfo: {
-    fontSize: 12,
-    color: colors.text,
-    opacity: 0.7,
-    marginBottom: 4,
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-  glassCard: {
+  progressCard: {
     marginBottom: 16,
     backgroundColor: colors.surface,
     borderRadius: 12,
     elevation: 2,
   },
-  glassContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  glassContainer: {
-    position: 'relative',
-    width: 100,
-    height: 100,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  glassFillContainer: {
-    position: 'absolute',
-    bottom: 0,
-    width: 80,
-    height: 80,
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
-  },
-  glassFill: {
-    width: '100%',
-    backgroundColor: colors.primary + '40',
-    borderBottomLeftRadius: 40,
-    borderBottomRightRadius: 40,
-  },
-  consumptionInfo: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  consumptionAmount: {
-    fontSize: 24,
+  progressTitle: {
+    fontSize: 16,
     fontWeight: 'bold',
     color: colors.text,
-  },
-  consumptionLabel: {
-    fontSize: 12,
-    color: colors.text,
-    opacity: 0.7,
-    marginBottom: 6,
+    marginBottom: 12,
   },
   progressBar: {
     height: 6,
     borderRadius: 3,
     marginBottom: 6,
   },
-  remainingAmount: {
+  progressText: {
     fontSize: 12,
     color: colors.text,
     opacity: 0.7,
   },
+  statsContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    paddingHorizontal: 16,
+  },
+  statCard: {
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  statTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: colors.primary,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: colors.text,
+    opacity: 0.7,
+  },
+  trendText: {
+    fontSize: 12,
+    color: colors.text,
+    marginTop: 4,
+  },
   chartCard: {
     marginBottom: 16,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    elevation: 2,
+    marginHorizontal: 16,
+  },
+  chartTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 16,
   },
   chart: {
     marginVertical: 8,
     borderRadius: 16,
   },
-  summaryRow: {
-    flexDirection: 'row',
+  recentDrinksCard: {
     marginBottom: 16,
-  },
-  summaryCard: {
-    flex: 1,
-    marginHorizontal: 8,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    elevation: 2,
+    marginHorizontal: 16,
   },
   sectionTitle: {
     fontSize: 16,
@@ -664,78 +671,98 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 12,
   },
-  summaryContent: {
-    marginBottom: 8,
-  },
-  summaryItem: {
-    marginBottom: 8,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: colors.text,
-    opacity: 0.7,
-  },
-  summaryValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.primary,
-  },
-  trendContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  trendText: {
-    fontSize: 12,
-    marginLeft: 4,
-  },
-  recentCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    elevation: 2,
-  },
-  sectionHeader: {
+  recentDrinkItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-  },
-  drinkItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.background,
   },
-  drinkInfo: {
+  recentDrinkInfo: {
     flex: 1,
   },
-  drinkDescription: {
-    fontSize: 14,
+  recentDrinkName: {
+    fontSize: 16,
     fontWeight: 'bold',
     color: colors.text,
   },
-  drinkDateTime: {
+  recentDrinkTime: {
     fontSize: 12,
     color: colors.text,
     opacity: 0.7,
-  },
-  drinkActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginTop: 4,
   },
   editButton: {
     margin: 0,
-    padding: 0,
   },
-  emptyMessage: {
+  emptyText: {
     textAlign: 'center',
     color: colors.text,
     opacity: 0.7,
-    marginVertical: 12,
+    marginVertical: 16,
   },
-  addButton: {
-    marginLeft: 8,
+  errorCard: {
+    margin: 16,
+    backgroundColor: colors.error + '20',
+    borderRadius: 12,
+  },
+  errorText: {
+    color: colors.error,
+    textAlign: 'center',
+  },
+  debugCard: {
+    margin: 16,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+  },
+  debugHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  debugTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  debugSubtitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  debugSection: {
+    marginBottom: 12,
+  },
+  debugText: {
+    fontSize: 12,
+    color: colors.text,
+    opacity: 0.8,
+    fontFamily: 'monospace',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: colors.text,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.error,
+    marginBottom: 10,
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: colors.text,
+    marginBottom: 20,
+    textAlign: 'center',
   },
 }); 

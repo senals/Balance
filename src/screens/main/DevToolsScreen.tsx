@@ -12,7 +12,9 @@ export const DevToolsScreen = ({ navigation }: { navigation: any }) => {
     settings, 
     budget, 
     userProfile,
-    logout
+    logout,
+    setDrinks,
+    setPreGamePlans
   } = useApp();
 
   const [metrics, setMetrics] = useState({
@@ -62,8 +64,19 @@ export const DevToolsScreen = ({ navigation }: { navigation: any }) => {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Clear AsyncStorage
               const keys = await AsyncStorage.getAllKeys();
               await AsyncStorage.multiRemove(keys);
+              
+              // Reset app state
+              setDrinks([]);
+              setPreGamePlans([]);
+              setMetrics({
+                drinksCount: 0,
+                plansCount: 0,
+                totalStorageSize: 0,
+                lastSyncTime: new Date().toISOString(),
+              });
               
               setSnackbarMessage('All data reset successfully');
               setSnackbarVisible(true);

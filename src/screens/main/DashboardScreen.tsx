@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, StyleSheet, ScrollView, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, ScrollView, Image, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
 import { Text, Card, Button, ProgressBar } from 'react-native-paper';
 import { colors } from '../../theme/colors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -25,8 +25,291 @@ interface StageContent {
   onAction: () => void;
 }
 
-export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) => {
-  const { drinks, settings, budget, userProfile, error, preGamePlans, readinessAssessment } = useApp();
+interface PreGamePlan {
+  id?: string;
+  date: string;
+  location?: string;
+  notes?: string;
+}
+
+interface ProcessedPreGamePlan extends PreGamePlan {
+  time: string;
+}
+
+interface UserSettings {
+  preGamePlans?: PreGamePlan[];
+  dailyBudget?: number;
+  weeklyBudget?: number;
+  monthlyBudget?: number;
+  dailyLimit?: number;
+  readinessAssessment?: {
+    primaryStage: string;
+    recommendations: string[];
+  };
+}
+
+interface UserAccount {
+  id: string;
+  name?: string;
+  email: string;
+}
+
+// Helper function for generating unique keys
+const generateUniqueKey = (item: any, type: string, index: number): string => {
+  if (item?.id) return `item-${item.id}`;
+  
+  const timestamp = item?.timestamp || item?.date || Date.now();
+  const itemType = item?.type || type || 'unknown';
+  const uniqueId = `${itemType}-${timestamp}-${index}`;
+  
+  return uniqueId;
+};
+
+export const DashboardScreen = ({ navigation }: { navigation: any }) => {
+  const { drinks = [], settings, currentUser, error } = useApp();
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [apiAvailable, setApiAvailable] = useState(false);
+  const [showDevTools, setShowDevTools] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
+
+  // Helper function to get current time in local timezone
+  const getCurrentTime = () => {
+    const now = new Date();
+    return {
+      iso: now.toISOString(),
+      local: now.toLocaleString(),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    };
+  };
+
+  // Enhanced debug logging function
+  const addDebugLog = (message: string, data?: any) => {
+    const timestamp = new Date().toLocaleTimeString();
+    let logMessage = `[${timestamp}] ${message}`;
+    
+    if (data) {
+      try {
+        // Convert any Date objects to local timezone strings
+        const processedData = JSON.parse(JSON.stringify(data, (key, value) => {
+          if (value instanceof Date) {
+            return {
+              iso: value.toISOString(),
+              local: value.toLocaleString(),
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+            };
+          }
+          return value;
+        }));
+        const dataString = JSON.stringify(processedData, null, 2);
+        logMessage += `\nData: ${dataString}`;
+      } catch (e) {
+        logMessage += `\nData: [Unable to stringify]`;
+      }
+    }
+    
+    console.log(logMessage);
+    setDebugInfo(prev => [logMessage, ...prev].slice(0, 20));
+  };
+
+  // Validate and analyze settings
+  const analyzeSettings = (settings: any) => {
+    const analysis = {
+      hasSettings: !!settings,
+      hasBudgets: {
+        daily: !!settings?.dailyBudget,
+        weekly: !!settings?.weeklyBudget,
+        monthly: !!settings?.monthlyBudget
+      },
+      hasLimits: {
+        daily: !!settings?.dailyLimit
+      },
+      hasPlans: {
+        hasPreGamePlans: Array.isArray(settings?.preGamePlans),
+        planCount: settings?.preGamePlans?.length || 0
+      },
+      hasReadinessAssessment: {
+        hasAssessment: !!settings?.readinessAssessment,
+        hasStage: !!settings?.readinessAssessment?.primaryStage,
+        hasRecommendations: Array.isArray(settings?.readinessAssessment?.recommendations)
+      }
+    };
+    return analysis;
+  };
+
+  // Analyze drinks data
+  const analyzeDrinks = (drinks: any[], settings: UserSettings) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - today.getDay());
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    const dailyDrinks = drinks.filter(drink => {
+      const drinkDate = new Date(drink.timestamp);
+      return drinkDate >= today;
+    });
+
+    const weeklyDrinks = drinks.filter(drink => {
+      const drinkDate = new Date(drink.timestamp);
+      return drinkDate >= weekStart;
+    });
+
+    const monthlyDrinks = drinks.filter(drink => {
+      const drinkDate = new Date(drink.timestamp);
+      return drinkDate >= monthStart;
+    });
+
+    const analysis = {
+      totalDrinks: drinks.length,
+      daily: {
+        count: dailyDrinks.length,
+        consumption: dailyDrinks.reduce((sum, drink) => sum + drink.quantity, 0),
+        limit: settings?.dailyLimit || 3,
+        percentage: dailyProgressPercentage
+      },
+      weekly: {
+        count: weeklyDrinks.length,
+        consumption: weeklyDrinks.reduce((sum, drink) => sum + drink.quantity, 0),
+        budget: settings?.weeklyBudget || 105,
+        percentage: weeklyBudgetPercentage
+      },
+      monthly: {
+        count: monthlyDrinks.length,
+        consumption: monthlyDrinks.reduce((sum, drink) => sum + drink.quantity, 0),
+        budget: settings?.monthlyBudget || 450,
+        percentage: monthlyBudgetPercentage
+      },
+      timeRange: drinks.length > 0 ? {
+        start: new Date(Math.min(...drinks.map(d => new Date(d.timestamp).getTime()))),
+        end: new Date(Math.max(...drinks.map(d => new Date(d.timestamp).getTime())))
+      } : null
+    };
+    return analysis;
+  };
+
+  // Initialize component
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        const currentTime = getCurrentTime();
+        addDebugLog('Initializing dashboard...', {
+          currentUser: currentUser?.id,
+          drinksCount: drinks.length,
+          settings: settings ? 'Available' : 'Not available',
+          currentTime
+        });
+        
+        setLoading(true);
+
+        // Check API availability
+        const response = await fetch('http://localhost:5000/api/health');
+        const isApiAvailable = response.status === 200;
+        setApiAvailable(isApiAvailable);
+        addDebugLog('API health check', {
+          status: response.status,
+          available: isApiAvailable,
+          url: 'http://localhost:5000/api/health',
+          responseTime: getCurrentTime()
+        });
+
+        // Analyze settings
+        const settingsAnalysis = analyzeSettings(settings);
+        addDebugLog('Settings analysis', settingsAnalysis);
+
+        // Analyze drinks data
+        const drinksAnalysis = analyzeDrinks(drinks, settings);
+        addDebugLog('Drinks analysis', drinksAnalysis);
+
+        // Analyze recent drinks
+        const validRecentDrinks = recentDrinks.filter(drink => drink && drink.id);
+        addDebugLog('Recent drinks analysis', {
+          count: validRecentDrinks.length,
+          drinks: validRecentDrinks.map(drink => ({
+            id: drink.id,
+            name: drink.drink,
+            date: drink.date,
+            time: drink.time
+          }))
+        });
+
+        // Analyze upcoming plans
+        const validPlans = upcomingPlans.filter(plan => plan && plan.id);
+        addDebugLog('Upcoming plans analysis', {
+          count: validPlans.length,
+          plans: validPlans.map(plan => ({
+            id: plan.id,
+            date: plan.date,
+            time: plan.time,
+            location: plan.location
+          }))
+        });
+
+        // Analyze success rate
+        addDebugLog('Success rate analysis', {
+          weeksCompleted,
+          totalWeeks,
+          successRate,
+          plantGrowthStage: getPlantGrowthImage()
+        });
+
+        setLoading(false);
+        addDebugLog('Dashboard initialized successfully');
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        addDebugLog('Initialization error', {
+          error: errorMessage,
+          stack: error instanceof Error ? error.stack : undefined,
+          currentState: {
+            loading,
+            apiAvailable,
+            drinksCount: drinks.length,
+            userId: currentUser?.id,
+            currentTime: getCurrentTime()
+          }
+        });
+        
+        setLoading(false);
+      }
+    };
+
+    initialize();
+  }, []);
+
+  // Handle refresh
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      addDebugLog('Refreshing dashboard data...', {
+        currentState: {
+          drinksCount: drinks.length,
+          settings: settings ? 'Available' : 'Not available',
+          currentTime: getCurrentTime()
+        }
+      });
+
+      // Add any refresh logic here
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate refresh
+
+      // Re-analyze data after refresh
+      const settingsAnalysis = analyzeSettings(settings);
+      const drinksAnalysis = analyzeDrinks(drinks, settings);
+      
+      addDebugLog('Refresh complete', {
+        settings: settingsAnalysis,
+        drinks: drinksAnalysis,
+        currentTime: getCurrentTime()
+      });
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      addDebugLog(`Error refreshing dashboard: ${errorMessage}`, {
+        error: errorMessage,
+        stack: error instanceof Error ? error.stack : undefined
+      });
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   // Calculate daily consumption
   const today = new Date().toISOString().split('T')[0];
@@ -34,12 +317,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
     drink.timestamp.startsWith(today)
   );
   const dailyConsumption = dailyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
-  const dailyLimit = settings.dailyLimit;
+  const dailyLimit = (settings as UserSettings)?.dailyLimit || 3;
   const dailyProgressPercentage = dailyConsumption / dailyLimit;
 
   // Calculate daily spending
   const dailySpent = dailyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
-  const dailyBudget = budget.dailyBudget;
+  const dailyBudget = (settings as UserSettings)?.dailyBudget || 15;
   const dailyBudgetPercentage = dailySpent / dailyBudget;
 
   // Calculate weekly consumption
@@ -52,7 +335,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
 
   // Calculate weekly spending
   const weeklySpent = weeklyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
-  const weeklyBudget = budget.weeklyBudget;
+  const weeklyBudget = (settings as UserSettings)?.weeklyBudget || 105;
   const weeklyBudgetPercentage = weeklySpent / weeklyBudget;
 
   // Calculate monthly consumption
@@ -65,19 +348,79 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
 
   // Calculate monthly spending
   const monthlySpent = monthlyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
-  const monthlyBudget = budget.monthlyBudget;
+  const monthlyBudget = (settings as UserSettings)?.monthlyBudget || 450;
   const monthlyBudgetPercentage = monthlySpent / monthlyBudget;
 
-  // Get recent drinks
-  const recentDrinks = [...drinks]
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, 3)
-    .map(drink => ({
-      id: drink.id,
-      drink: `${drink.brand} (${drink.quantity}x)`,
-      date: new Date(drink.timestamp).toLocaleDateString(),
-      time: new Date(drink.timestamp).toLocaleTimeString(),
-    }));
+  // Validate and prepare recent drinks data
+  const recentDrinks = React.useMemo(() => {
+    if (!drinks || !Array.isArray(drinks)) {
+      addDebugLog('Invalid drinks data');
+      return [];
+    }
+
+    const validDrinks = drinks
+      .filter(drink => {
+        const isValid = drink && 
+          (drink.id || drink.timestamp) && 
+          drink.brand && 
+          typeof drink.quantity === 'number';
+        if (!isValid) {
+          addDebugLog(`Invalid drink entry: ${JSON.stringify(drink)}`);
+        }
+        return isValid;
+      })
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 3)
+      .map((drink, index) => ({
+        id: generateUniqueKey(drink, 'drink', index),
+        drink: `${drink.brand} (${drink.quantity}x)`,
+        date: new Date(drink.timestamp).toLocaleDateString(),
+        time: new Date(drink.timestamp).toLocaleTimeString(),
+      }));
+
+    addDebugLog(`Processed ${validDrinks.length} recent drinks`);
+    return validDrinks;
+  }, [drinks]);
+
+  // Validate and prepare upcoming plans
+  const upcomingPlans = React.useMemo(() => {
+    const userSettings = settings as UserSettings;
+    if (!userSettings?.preGamePlans) {
+      addDebugLog('No pre-game plans found in settings');
+      return [];
+    }
+
+    if (!Array.isArray(userSettings.preGamePlans)) {
+      addDebugLog('Pre-game plans is not an array');
+      return [];
+    }
+
+    const validPlans = userSettings.preGamePlans
+      .filter((plan: PreGamePlan) => {
+        const isValid = plan && 
+          (plan.id || plan.date) && 
+          typeof plan.date === 'string' &&
+          new Date(plan.date).toString() !== 'Invalid Date';
+        if (!isValid) {
+          addDebugLog(`Invalid plan entry: ${JSON.stringify(plan)}`);
+        }
+        return isValid;
+      })
+      .sort((a: PreGamePlan, b: PreGamePlan) => 
+        new Date(a.date).getTime() - new Date(b.date).getTime()
+      )
+      .slice(0, 2)
+      .map((plan: PreGamePlan, index: number) => ({
+        id: generateUniqueKey(plan, 'plan', index),
+        date: new Date(plan.date).toLocaleDateString(),
+        time: new Date(plan.date).toLocaleTimeString(),
+        location: plan.location || 'Unknown location',
+        notes: plan.notes || 'No notes',
+      })) as ProcessedPreGamePlan[];
+
+    addDebugLog(`Processed ${validPlans.length} upcoming plans`);
+    return validPlans;
+  }, [settings]);
 
   // Calculate long-term progress
   const totalWeeks = 4; // 4-week goal period
@@ -94,7 +437,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
     : 0;
   
   // Calculate success rate (percentage of weeks where user stayed within budget)
-  const successRate = calculateSuccessRate(drinks, budget);
+  const successRate = calculateSuccessRate(drinks, settings);
   
   // Determine plant growth stage based on success rate
   const getPlantGrowthImage = () => {
@@ -121,17 +464,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
     navigation.navigate('PreGamePlanner');
   };
 
-  // Get upcoming pre-game plans (sorted by date)
-  const upcomingPlans = preGamePlans
-    .filter(plan => !plan.completed && new Date(plan.date) >= new Date())
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .slice(0, 3); // Show only the next 3 upcoming plans
-
   // Get stage-specific content
   const getStageContent = () => {
-    if (!readinessAssessment) return null;
+    const userSettings = settings as UserSettings;
+    if (!userSettings?.readinessAssessment) return null;
 
-    const { primaryStage, recommendations } = readinessAssessment;
+    const { primaryStage, recommendations } = userSettings.readinessAssessment;
     let content: StageContent = {
       title: '',
       description: '',
@@ -198,8 +536,8 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
           {recommendations && recommendations.length > 0 && (
             <View style={styles.recommendationsContainer}>
               <Text style={styles.recommendationsTitle}>Recommendations:</Text>
-              {recommendations.map((recommendation, index) => (
-                <View key={index} style={styles.recommendationItem}>
+              {recommendations.map((recommendation: string, index: number) => (
+                <View key={`recommendation-${index}`} style={styles.recommendationItem}>
                   <MaterialCommunityIcons name="check-circle" size={16} color={colors.primary} />
                   <Text style={styles.recommendationText}>{recommendation}</Text>
                 </View>
@@ -220,208 +558,292 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({ navigation }) 
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Dashboard</Text>
-        <Text style={styles.subtitle}>Welcome back, {userProfile?.name || 'User'}</Text>
-      </View>
-      
-      <View style={styles.content}>
-        {/* Stage-specific content */}
-        {getStageContent()}
-
-        {/* Long-term Progress Plant */}
-        <Card style={styles.treeCard}>
-          <Card.Content style={styles.treeContent}>
-            <View style={styles.treeContainer}>
-              <Image 
-                source={getPlantGrowthImage()} 
-                style={styles.plantImage}
-                resizeMode="contain"
-              />
-              <View style={styles.groundContainer}>
-                <View 
-                  style={[
-                    styles.groundFill, 
-                    { width: `${successRate * 100}%` }
-                  ]} 
-                />
-              </View>
-            </View>
-            <View style={styles.progressInfo}>
-              <Text style={styles.progressAmount}>{weeksCompleted}/{totalWeeks}</Text>
-              <Text style={styles.progressLabel}>Weeks Completed</Text>
-              <ProgressBar 
-                progress={weeksCompleted / totalWeeks} 
-                color={colors.primary} 
-                style={styles.progressBar} 
-              />
-              <Text style={styles.successRate}>Success Rate: {Math.round(successRate * 100)}%</Text>
-              <Text style={styles.remainingAmount}>{totalWeeks - weeksCompleted} weeks remaining</Text>
-            </View>
-          </Card.Content>
-        </Card>
-        
-        {/* Daily Overview */}
-        <Card style={styles.overviewCard}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>Today's Overview</Text>
-            <View style={styles.overviewContent}>
-              <View style={styles.overviewItem}>
-                <Text style={styles.overviewLabel}>Drinks</Text>
-                <Text style={styles.overviewValue}>{dailyConsumption}/{dailyLimit}</Text>
-                <ProgressBar 
-                  progress={dailyProgressPercentage} 
-                  color={dailyProgressPercentage > 0.8 ? colors.error : colors.primary} 
-                  style={styles.progressBar} 
-                />
-              </View>
-              <View style={styles.overviewItem}>
-                <Text style={styles.overviewLabel}>Spending</Text>
-                <Text style={styles.overviewValue}>${dailySpent.toFixed(2)}/${dailyBudget.toFixed(2)}</Text>
-                <ProgressBar 
-                  progress={dailyBudgetPercentage} 
-                  color={dailyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
-                  style={styles.progressBar} 
-                />
-              </View>
-            </View>
-          </Card.Content>
-        </Card>
-        
-        {/* Weekly and Monthly Summary */}
-        <View style={styles.summaryRow}>
-          <Card style={styles.summaryCard}>
-            <Card.Content>
-              <Text style={styles.sectionTitle}>Weekly</Text>
-              <View style={styles.summaryContent}>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Drinks</Text>
-                  <Text style={styles.summaryValue}>{weeklyConsumption}</Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Spending</Text>
-                  <Text style={styles.summaryValue}>£{weeklySpent.toFixed(2)}</Text>
-                </View>
-                <ProgressBar 
-                  progress={weeklyBudgetPercentage} 
-                  color={weeklyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
-                  style={styles.progressBar} 
-                />
-              </View>
-            </Card.Content>
-          </Card>
-          
-          <Card style={styles.summaryCard}>
-            <Card.Content>
-              <Text style={styles.sectionTitle}>Monthly</Text>
-              <View style={styles.summaryContent}>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Drinks</Text>
-                  <Text style={styles.summaryValue}>{monthlyConsumption}</Text>
-                </View>
-                <View style={styles.summaryItem}>
-                  <Text style={styles.summaryLabel}>Spending</Text>
-                  <Text style={styles.summaryValue}>£{monthlySpent.toFixed(2)}</Text>
-                </View>
-                <ProgressBar 
-                  progress={monthlyBudgetPercentage} 
-                  color={monthlyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
-                  style={styles.progressBar} 
-                />
-              </View>
-            </Card.Content>
-          </Card>
+    <ScrollView 
+      style={styles.container}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={[colors.primary]}
+          tintColor={colors.primary}
+        />
+      }
+    >
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading dashboard...</Text>
         </View>
-        
-        {/* Pre-Game Plans */}
-        <Card style={styles.preGameCard}>
-          <Card.Content>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Upcoming Pre-Game Plans</Text>
+      ) : (
+        <>
+          <View style={styles.debugContainer}>
+            <TouchableOpacity 
+              style={styles.debugHeader}
+              onPress={() => setShowDevTools(!showDevTools)}
+            >
+              <View style={styles.debugHeaderContent}>
+                <MaterialCommunityIcons 
+                  name={showDevTools ? "chevron-up" : "chevron-down"} 
+                  size={24} 
+                  color={colors.text} 
+                />
+                <Text style={styles.debugTitle}>Debug Information</Text>
+                <View style={styles.debugStatus}>
+                  <View style={[
+                    styles.debugStatusDot, 
+                    { backgroundColor: apiAvailable ? colors.success : colors.error }
+                  ]} />
+                  <Text style={styles.debugStatusText}>
+                    {apiAvailable ? 'API Connected' : 'API Disconnected'}
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+            
+            {showDevTools && (
+              <View style={styles.debugContent}>
+                <View style={styles.debugSection}>
+                  <Text style={styles.debugSubtitle}>Current State</Text>
+                  <View style={styles.debugGrid}>
+                    <View style={styles.debugGridItem}>
+                      <Text style={styles.debugLabel}>User ID</Text>
+                      <Text style={styles.debugValue}>{currentUser?.id || 'Not available'}</Text>
+                    </View>
+                    <View style={styles.debugGridItem}>
+                      <Text style={styles.debugLabel}>Drinks Count</Text>
+                      <Text style={styles.debugValue}>{drinks.length}</Text>
+                    </View>
+                    <View style={styles.debugGridItem}>
+                      <Text style={styles.debugLabel}>Loading</Text>
+                      <Text style={styles.debugValue}>{loading ? 'Yes' : 'No'}</Text>
+                    </View>
+                    <View style={styles.debugGridItem}>
+                      <Text style={styles.debugLabel}>Refreshing</Text>
+                      <Text style={styles.debugValue}>{refreshing ? 'Yes' : 'No'}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.debugSection}>
+                  <Text style={styles.debugSubtitle}>Recent Logs</Text>
+                  <ScrollView style={styles.debugLogs} nestedScrollEnabled>
+                    {debugInfo.map((log, index) => (
+                      <Text key={`debug-${index}-${Date.now()}`} style={styles.debugLog}>
+                        {log}
+                      </Text>
+                    ))}
+                  </ScrollView>
+                </View>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.header}>
+            <Text style={styles.title}>Dashboard</Text>
+            <Text style={styles.subtitle}>Welcome back, {(currentUser as UserAccount)?.name || 'User'}</Text>
+          </View>
+          
+          <View style={styles.content}>
+            {/* Stage-specific content */}
+            {getStageContent()}
+
+            {/* Long-term Progress Plant */}
+            <Card style={styles.treeCard}>
+              <Card.Content style={styles.treeContent}>
+                <View style={styles.treeContainer}>
+                  <Image 
+                    source={getPlantGrowthImage()} 
+                    style={styles.plantImage}
+                    resizeMode="contain"
+                  />
+                  <View style={styles.groundContainer}>
+                    <View 
+                      style={[
+                        styles.groundFill, 
+                        { width: `${successRate * 100}%` }
+                      ]} 
+                    />
+                  </View>
+                </View>
+                <View style={styles.progressInfo}>
+                  <Text style={styles.progressAmount}>{weeksCompleted}/{totalWeeks}</Text>
+                  <Text style={styles.progressLabel}>Weeks Completed</Text>
+                  <ProgressBar 
+                    progress={weeksCompleted / totalWeeks} 
+                    color={colors.primary} 
+                    style={styles.progressBar} 
+                  />
+                  <Text style={styles.successRate}>Success Rate: {Math.round(successRate * 100)}%</Text>
+                  <Text style={styles.remainingAmount}>{totalWeeks - weeksCompleted} weeks remaining</Text>
+                </View>
+              </Card.Content>
+            </Card>
+            
+            {/* Daily Overview */}
+            <Card style={styles.overviewCard}>
+              <Card.Content>
+                <Text style={styles.sectionTitle}>Today's Overview</Text>
+                <View style={styles.overviewContent}>
+                  <View style={styles.overviewItem}>
+                    <Text style={styles.overviewLabel}>Drinks</Text>
+                    <Text style={styles.overviewValue}>{dailyConsumption}/{dailyLimit}</Text>
+                    <ProgressBar 
+                      progress={dailyProgressPercentage} 
+                      color={dailyProgressPercentage > 0.8 ? colors.error : colors.primary} 
+                      style={styles.progressBar} 
+                    />
+                  </View>
+                  <View style={styles.overviewItem}>
+                    <Text style={styles.overviewLabel}>Spending</Text>
+                    <Text style={styles.overviewValue}>${dailySpent.toFixed(2)}/${dailyBudget.toFixed(2)}</Text>
+                    <ProgressBar 
+                      progress={dailyBudgetPercentage} 
+                      color={dailyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
+                      style={styles.progressBar} 
+                    />
+                  </View>
+                </View>
+              </Card.Content>
+            </Card>
+            
+            {/* Weekly and Monthly Summary */}
+            <View style={styles.summaryRow}>
+              <Card style={styles.summaryCard}>
+                <Card.Content>
+                  <Text style={styles.sectionTitle}>Weekly</Text>
+                  <View style={styles.summaryContent}>
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryLabel}>Drinks</Text>
+                      <Text style={styles.summaryValue}>{weeklyConsumption}</Text>
+                    </View>
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryLabel}>Spending</Text>
+                      <Text style={styles.summaryValue}>£{weeklySpent.toFixed(2)}</Text>
+                    </View>
+                    <ProgressBar 
+                      progress={weeklyBudgetPercentage} 
+                      color={weeklyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
+                      style={styles.progressBar} 
+                    />
+                  </View>
+                </Card.Content>
+              </Card>
+              
+              <Card style={styles.summaryCard}>
+                <Card.Content>
+                  <Text style={styles.sectionTitle}>Monthly</Text>
+                  <View style={styles.summaryContent}>
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryLabel}>Drinks</Text>
+                      <Text style={styles.summaryValue}>{monthlyConsumption}</Text>
+                    </View>
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryLabel}>Spending</Text>
+                      <Text style={styles.summaryValue}>£{monthlySpent.toFixed(2)}</Text>
+                    </View>
+                    <ProgressBar 
+                      progress={monthlyBudgetPercentage} 
+                      color={monthlyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
+                      style={styles.progressBar} 
+                    />
+                  </View>
+                </Card.Content>
+              </Card>
+            </View>
+            
+            {/* Pre-Game Plans */}
+            <Card style={styles.preGameCard}>
+              <Card.Content>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Upcoming Plans</Text>
+                  <Button 
+                    mode="text" 
+                    onPress={handleViewPreGamePlanner}
+                    textColor={colors.primary}
+                  >
+                    View All
+                  </Button>
+                </View>
+                {upcomingPlans.length > 0 ? (
+                  upcomingPlans.map((plan: ProcessedPreGamePlan) => (
+                    <View key={plan.id} style={styles.planItem}>
+                      <MaterialCommunityIcons
+                        name="calendar-clock"
+                        size={24}
+                        color={colors.primary}
+                      />
+                      <View style={styles.planInfo}>
+                        <Text style={styles.planDateTime}>
+                          {plan.date} at {plan.time}
+                        </Text>
+                        <Text style={styles.planLocation}>{plan.location}</Text>
+                        <Text style={styles.planNotes}>{plan.notes}</Text>
+                      </View>
+                    </View>
+                  ))
+                ) : (
+                  <View style={styles.emptyPreGameContainer}>
+                    <Text style={styles.emptyMessage}>No upcoming plans</Text>
+                    <Button 
+                      mode="contained" 
+                      onPress={handleViewPreGamePlanner}
+                      style={styles.createPlanButton}
+                    >
+                      Create a Plan
+                    </Button>
+                  </View>
+                )}
+              </Card.Content>
+            </Card>
+            
+            {/* Recent Activity */}
+            <Card style={styles.recentCard}>
+              <Card.Content>
+                <Text style={styles.sectionTitle}>Recent Activity</Text>
+                {recentDrinks.length > 0 ? (
+                  recentDrinks.map((drink) => (
+                    <View key={drink.id} style={styles.activityItem}>
+                      <MaterialCommunityIcons
+                        name="glass-cocktail" 
+                        size={24} 
+                        color={colors.primary} 
+                      />
+                      <View style={styles.activityInfo}>
+                        <Text style={styles.activityText}>{drink.drink}</Text>
+                        <Text style={styles.activityDateTime}>
+                          {drink.date} {drink.time}
+                        </Text>
+                      </View>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.emptyMessage}>No recent activity</Text>
+                )}
+              </Card.Content>
+            </Card>
+            
+            {/* Quick Actions */}
+            <View style={styles.actionsRow}>
               <Button 
-                mode="text" 
-                onPress={handleViewPreGamePlanner}
-                textColor={colors.primary}
+                mode="contained" 
+                onPress={handleViewDrinkTracker}
+                style={styles.actionButton}
+                icon="glass-cocktail"
               >
-                View All
+                Drink Tracker
+              </Button>
+              <Button 
+                mode="contained" 
+                onPress={handleViewBudgetTracker}
+                style={styles.actionButton}
+                icon="cash"
+              >
+                Budget Tracker
               </Button>
             </View>
-            {upcomingPlans.length > 0 ? (
-              upcomingPlans.map(plan => (
-                <View key={plan.id} style={styles.planItem}>
-                  <View style={styles.planHeader}>
-                    <Text style={styles.planTitle}>{plan.title}</Text>
-                    <Text style={styles.planDate}>
-                      {format(new Date(plan.date), 'MMM dd')}
-                    </Text>
-                  </View>
-                  <Text style={styles.planLocation}>{plan.location}</Text>
-                  <View style={styles.planLimits}>
-                    <Text style={styles.planLimit}>Max Drinks: {plan.maxDrinks}</Text>
-                    <Text style={styles.planLimit}>Max Spending: ${plan.maxSpending.toFixed(2)}</Text>
-                  </View>
-                </View>
-              ))
-            ) : (
-              <View style={styles.emptyPreGameContainer}>
-                <Text style={styles.emptyMessage}>No upcoming pre-game plans</Text>
-                <Button 
-                  mode="contained" 
-                  onPress={handleViewPreGamePlanner}
-                  style={styles.createPlanButton}
-                >
-                  Create a Plan
-                </Button>
-              </View>
-            )}
-          </Card.Content>
-        </Card>
-        
-        {/* Recent Activity */}
-        <Card style={styles.recentCard}>
-          <Card.Content>
-            <Text style={styles.sectionTitle}>Recent Activity</Text>
-            {recentDrinks.length > 0 ? (
-              recentDrinks.map(drink => (
-                <View key={drink.id} style={styles.activityItem}>
-                  <MaterialCommunityIcons
-                    name="glass-cocktail" 
-                    size={24} 
-                    color={colors.primary} 
-                  />
-                  <View style={styles.activityInfo}>
-                    <Text style={styles.activityText}>{drink.drink}</Text>
-                    <Text style={styles.activityDateTime}>{drink.date} {drink.time}</Text>
-                  </View>
-                </View>
-              ))
-            ) : (
-              <Text style={styles.emptyMessage}>No recent activity</Text>
-            )}
-          </Card.Content>
-        </Card>
-        
-        {/* Quick Actions */}
-        <View style={styles.actionsRow}>
-          <Button 
-            mode="contained" 
-            onPress={handleViewDrinkTracker}
-            style={styles.actionButton}
-            icon="glass-cocktail"
-          >
-            Drink Tracker
-          </Button>
-          <Button 
-            mode="contained" 
-            onPress={handleViewBudgetTracker}
-            style={styles.actionButton}
-            icon="cash"
-          >
-            Budget Tracker
-          </Button>
-        </View>
-      </View>
+          </View>
+        </>
+      )}
     </ScrollView>
   );
 };
@@ -699,33 +1121,24 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.background,
   },
-  planHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
+  planInfo: {
+    marginLeft: 12,
+    flex: 1,
   },
-  planTitle: {
-    fontSize: 16,
+  planDateTime: {
+    fontSize: 14,
     fontWeight: 'bold',
     color: colors.text,
-  },
-  planDate: {
-    fontSize: 14,
-    color: colors.primary,
   },
   planLocation: {
     fontSize: 14,
     color: colors.text,
     marginBottom: 8,
   },
-  planLimits: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  planLimit: {
+  planNotes: {
     fontSize: 12,
     color: colors.text,
+    opacity: 0.7,
   },
   emptyPreGameContainer: {
     alignItems: 'center',
@@ -768,5 +1181,96 @@ const styles = StyleSheet.create({
   },
   stageActionButton: {
     marginTop: 8,
+  },
+  debugContainer: {
+    margin: 16,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    elevation: 2,
+    overflow: 'hidden',
+  },
+  debugHeader: {
+    padding: 12,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.background,
+  },
+  debugHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  debugTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text,
+    flex: 1,
+    marginLeft: 8,
+  },
+  debugStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  debugStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 4,
+  },
+  debugStatusText: {
+    fontSize: 12,
+    color: colors.text,
+  },
+  debugContent: {
+    maxHeight: 300,
+  },
+  debugSection: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.background,
+  },
+  debugSubtitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  debugGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -4,
+  },
+  debugGridItem: {
+    width: '50%',
+    padding: 4,
+  },
+  debugLabel: {
+    fontSize: 12,
+    color: colors.text,
+    opacity: 0.7,
+  },
+  debugValue: {
+    fontSize: 14,
+    color: colors.text,
+    fontWeight: '500',
+  },
+  debugLogs: {
+    maxHeight: 150,
+  },
+  debugLog: {
+    fontSize: 12,
+    color: colors.text,
+    fontFamily: 'monospace',
+    marginBottom: 4,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 14,
+    color: colors.text,
+    marginTop: 12,
   },
 }); 

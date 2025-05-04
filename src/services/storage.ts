@@ -330,8 +330,13 @@ export const storage = {
   // Specialized methods for our app
   drinks: {
     async getAll(userId: string): Promise<DrinkEntry[]> {
-      const drinks = await storage.get<DrinkEntry[]>(storage.getUserKey(STORAGE_KEYS.DRINKS, userId));
-      return drinks || [];
+      try {
+        const drinks = await storage.get<DrinkEntry[]>(storage.getUserKey(STORAGE_KEYS.DRINKS, userId));
+        return drinks || [];
+      } catch (error) {
+        console.error('Error getting drinks:', error);
+        return [];
+      }
     },
 
     async add(drink: Omit<DrinkEntry, 'id' | 'userId'>): Promise<DrinkEntry> {
@@ -346,6 +351,18 @@ export const storage = {
         id: Date.now().toString(),
         userId: currentUser.id,
       };
+      
+      // Check for duplicates
+      const isDuplicate = drinks.some(d => 
+        d.timestamp === newDrink.timestamp && 
+        d.brand === newDrink.brand && 
+        d.quantity === newDrink.quantity
+      );
+      
+      if (isDuplicate) {
+        throw new StorageError('Duplicate drink entry', 'add', STORAGE_KEYS.DRINKS);
+      }
+      
       drinks.push(newDrink);
       await storage.set(storage.getUserKey(STORAGE_KEYS.DRINKS, currentUser.id), drinks);
       return newDrink;
@@ -362,6 +379,19 @@ export const storage = {
       if (index === -1) {
         throw new StorageError('Drink not found', 'update', STORAGE_KEYS.DRINKS);
       }
+      
+      // Check for duplicates with other drinks
+      const isDuplicate = drinks.some((d, i) => 
+        i !== index && 
+        d.timestamp === (updates.timestamp || drinks[index].timestamp) && 
+        d.brand === (updates.brand || drinks[index].brand) && 
+        d.quantity === (updates.quantity || drinks[index].quantity)
+      );
+      
+      if (isDuplicate) {
+        throw new StorageError('Duplicate drink entry', 'update', STORAGE_KEYS.DRINKS);
+      }
+      
       drinks[index] = { ...drinks[index], ...updates };
       await storage.set(storage.getUserKey(STORAGE_KEYS.DRINKS, currentUser.id), drinks);
       return drinks[index];

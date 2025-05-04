@@ -484,96 +484,92 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         throw new Error('User not authenticated');
       }
 
-      console.log('Adding drink to MongoDB:', { ...drink, userId: currentUser.id });
+      // First save to local storage
+      const localDrink = await storage.drinks.add(drink);
+      console.log('Drink saved to local storage:', localDrink);
 
-      // Save to MongoDB
+      // Helper function to safely convert to ISO string
+      const toISODateString = (date: string | Date): string => {
+        if (typeof date === 'string') {
+          return date;
+        }
+        return (date as Date).toISOString();
+      };
+
+      // Then try to save to MongoDB
       try {
-        // Format the drink data to match the MongoDB schema
         const formattedDrink = {
           userId: currentUser.id,
           type: drink.type,
           amount: drink.quantity,
-          timestamp: new Date(drink.timestamp),
+          timestamp: toISODateString(new Date(drink.timestamp)),
           notes: drink.notes || '',
           category: drink.category,
           brand: drink.brand,
           alcoholContent: drink.alcoholContent,
           price: drink.price,
-          location: drink.location
+          location: drink.location,
+          quantity: drink.quantity
         };
         
-        console.log('Formatted drink for MongoDB:', formattedDrink);
+        const newDrink = await drinkApi.create(formattedDrink, currentUser.id);
+        console.log('Drink saved to MongoDB:', newDrink);
         
-        const newDrink = await drinkApi.create(drink, currentUser.id);
-        console.log('MongoDB server response:', newDrink);
-        
-        // Convert the MongoDB response to the format expected by the app
-        const formattedDrinkEntry: DrinkEntry = {
-          id: newDrink._id || newDrink.id,
-          category: newDrink.category || drink.category,
-          type: newDrink.type || drink.type,
-          brand: newDrink.brand || drink.brand,
-          alcoholContent: newDrink.alcoholContent || drink.alcoholContent,
-          quantity: newDrink.amount || drink.quantity,
-          price: newDrink.price || drink.price,
-          location: newDrink.location || drink.location,
-          notes: newDrink.notes || drink.notes,
-          timestamp: newDrink.timestamp || drink.timestamp,
-          userId: newDrink.userId || currentUser.id
+        // Update local storage with MongoDB ID
+        const updatedDrink = {
+          ...localDrink,
+          id: newDrink._id || newDrink.id
         };
+        await storage.drinks.update(localDrink.id, updatedDrink);
         
-        console.log('Formatted drink for local state:', formattedDrinkEntry);
-        
-        // Update local state immediately
+        // Update local state
         setDrinks(prev => {
-          const updated = [...prev, formattedDrinkEntry];
+          const updated = [...prev, updatedDrink];
           console.log('Updated drinks state with new drink. Total drinks:', updated.length);
           return updated;
         });
 
-        // Add the drink as an expense in the budget tracking system
-        if (formattedDrinkEntry.price > 0) {
-          console.log('Adding drink as expense to budget');
+        // Add to budget if price exists
+        if (drink.price > 0) {
           const expense = {
-            amount: formattedDrinkEntry.price,
+            amount: drink.price,
             category: 'Drinks',
-            date: formattedDrinkEntry.timestamp,
-            notes: `${formattedDrinkEntry.quantity}x ${formattedDrinkEntry.brand} at ${formattedDrinkEntry.location || 'Unknown location'}`
+            date: toISODateString(new Date(drink.timestamp)),
+            notes: `${drink.quantity}x ${drink.brand} at ${drink.location || 'Unknown location'}`
           };
-          const updatedBudget = await dataService.budget.addExpense(currentUser.id, expense);
-          if (updatedBudget) {
-            console.log('Budget updated successfully');
-            // Convert the API budget to the storage budget format
-            const storageBudget: BudgetData = {
-              dailyBudget: updatedBudget.dailyBudget,
-              weeklyBudget: updatedBudget.weeklyBudget,
-              monthlyBudget: updatedBudget.monthlyBudget,
-              userId: updatedBudget.userId,
-              expenses: updatedBudget.expenses.map(exp => ({
-                id: Date.now().toString(), // Generate a new ID for each expense
-                amount: exp.amount,
-                category: exp.category,
-                date: exp.date.toISOString(),
-                notes: exp.notes
-              }))
-            };
-            setBudget(storageBudget);
+          
+          try {
+            const updatedBudget = await dataService.budget.addExpense(currentUser.id, expense);
+            if (updatedBudget) {
+              const storageBudget: BudgetData = {
+                dailyBudget: updatedBudget.dailyBudget,
+                weeklyBudget: updatedBudget.weeklyBudget,
+                monthlyBudget: updatedBudget.monthlyBudget,
+                userId: updatedBudget.userId,
+                expenses: updatedBudget.expenses.map(exp => ({
+                  id: Date.now().toString(),
+                  amount: exp.amount,
+                  category: exp.category,
+                  date: toISODateString(exp.date),
+                  notes: exp.notes
+                }))
+              };
+              setBudget(storageBudget);
+            }
+          } catch (budgetError) {
+            console.error('Error adding drink to budget:', budgetError);
+            // Don't throw here, as the drink was already saved successfully
           }
         }
         
-        return formattedDrinkEntry;
+        return updatedDrink;
       } catch (apiError) {
         console.error('MongoDB API error:', apiError);
-        throw apiError;
+        // Return the locally saved drink even if MongoDB save failed
+        return localDrink;
       }
     } catch (error) {
       console.error('Error in addDrink function:', error);
-      if (error instanceof Error) {
-        console.error('Error details:', {
-          message: error.message,
-          stack: error.stack
-        });
-      }
       const errorMessage = error instanceof Error ? error.message : 'Failed to add drink';
       setError(errorMessage);
       throw error;

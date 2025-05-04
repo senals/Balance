@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, RefreshControl, ScrollView, Alert } from 'react-native';
+import { View, StyleSheet, RefreshControl, ScrollView, Alert, Dimensions } from 'react-native';
 import { Text, Card, Button, IconButton, ProgressBar, ActivityIndicator, Divider } from 'react-native-paper';
 import { colors } from '../../theme/colors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../context/AppContext';
 import { drinkApi } from '../../services/drinkApi';
+import { LineChart } from 'react-native-chart-kit';
 
 export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
   const { drinks, settings, error, currentUser, addDrink, updateDrink, removeDrink } = useApp();
@@ -236,6 +237,56 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
     setShowDevTools(!showDevTools);
   };
 
+  // Calculate weekly consumption data for chart
+  const getWeeklyData = () => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const weeklyData = days.map((_, index) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (6 - index));
+      const dayStart = new Date(date.setHours(0, 0, 0, 0)).toISOString();
+      const dayEnd = new Date(date.setHours(23, 59, 59, 999)).toISOString();
+      
+      return localDrinks.filter(drink => 
+        drink.timestamp >= dayStart && drink.timestamp <= dayEnd
+      ).reduce((sum, drink) => sum + drink.quantity, 0);
+    });
+    
+    return {
+      labels: days,
+      datasets: [{
+        data: weeklyData,
+        color: (opacity = 1) => colors.primary,
+        strokeWidth: 2
+      }]
+    };
+  };
+
+  // Calculate trend indicators
+  const calculateTrend = (current: number, previous: number) => {
+    if (previous === 0) return 0;
+    return ((current - previous) / previous) * 100;
+  };
+
+  const weeklyTrend = calculateTrend(
+    weeklyConsumption,
+    localDrinks.filter(drink => {
+      const date = new Date(drink.timestamp);
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      return date < weekAgo;
+    }).reduce((sum, drink) => sum + drink.quantity, 0)
+  );
+
+  const monthlyTrend = calculateTrend(
+    monthlyConsumption,
+    localDrinks.filter(drink => {
+      const date = new Date(drink.timestamp);
+      const monthAgo = new Date();
+      monthAgo.setMonth(monthAgo.getMonth() - 1);
+      return date < monthAgo;
+    }).reduce((sum, drink) => sum + drink.quantity, 0)
+  );
+
   return (
     <ScrollView 
       style={styles.container}
@@ -255,8 +306,10 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
       ) : (
         <>
           <View style={styles.header}>
-            <Text style={styles.title}>Drink Tracker</Text>
-            <Text style={styles.subtitle}>Monitor your consumption</Text>
+            <View>
+              <Text style={styles.title}>Drink Tracker</Text>
+              <Text style={styles.subtitle}>Monitor your consumption</Text>
+            </View>
             <IconButton
               icon="cog"
               size={24}
@@ -310,7 +363,7 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
                     <View 
                       style={[
                         styles.glassFill, 
-                        { height: `${progressPercentage * 100}%` }
+                        { height: `${Math.min(progressPercentage * 100, 100)}%` }
                       ]} 
                     />
                   </View>
@@ -327,65 +380,101 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
                 </View>
               </Card.Content>
             </Card>
+
+            {/* Weekly Trend Chart */}
+            <Card style={styles.chartCard}>
+              <Card.Content>
+                <Text style={styles.sectionTitle}>Weekly Trend</Text>
+                <LineChart
+                  data={getWeeklyData()}
+                  width={Dimensions.get('window').width - 48}
+                  height={220}
+                  chartConfig={{
+                    backgroundColor: colors.surface,
+                    backgroundGradientFrom: colors.surface,
+                    backgroundGradientTo: colors.surface,
+                    decimalPlaces: 0,
+                    color: (opacity = 1) => colors.primary,
+                    labelColor: (opacity = 1) => colors.text,
+                    style: {
+                      borderRadius: 16
+                    },
+                    propsForDots: {
+                      r: "6",
+                      strokeWidth: "2",
+                      stroke: colors.primary
+                    }
+                  }}
+                  bezier
+                  style={styles.chart}
+                />
+              </Card.Content>
+            </Card>
             
-            {/* Consumption Summary and Recent Drinks in a row */}
-            <View style={styles.bottomRow}>
-              {/* Consumption Summary */}
+            {/* Consumption Summary */}
+            <View style={styles.summaryRow}>
               <Card style={styles.summaryCard}>
                 <Card.Content>
-                  <Text style={styles.sectionTitle}>Summary</Text>
+                  <Text style={styles.sectionTitle}>Weekly Summary</Text>
                   <View style={styles.summaryContent}>
                     <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Weekly</Text>
+                      <Text style={styles.summaryLabel}>Total</Text>
                       <Text style={styles.summaryValue}>{weeklyConsumption}</Text>
+                      <View style={styles.trendContainer}>
+                        <MaterialCommunityIcons 
+                          name={weeklyTrend >= 0 ? "trending-up" : "trending-down"} 
+                          size={16} 
+                          color={weeklyTrend >= 0 ? colors.success : colors.error} 
+                        />
+                        <Text style={[styles.trendText, { color: weeklyTrend >= 0 ? colors.success : colors.error }]}>
+                          {Math.abs(weeklyTrend).toFixed(1)}%
+                        </Text>
+                      </View>
                     </View>
                     <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Monthly</Text>
-                      <Text style={styles.summaryValue}>{monthlyConsumption}</Text>
-                    </View>
-                    <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Daily Avg</Text>
+                      <Text style={styles.summaryLabel}>Daily Average</Text>
                       <Text style={styles.summaryValue}>
-                        {(monthlyConsumption / (new Date().getDate())).toFixed(1)}
+                        {(weeklyConsumption / 7).toFixed(1)}
                       </Text>
                     </View>
                   </View>
-                  <Button 
-                    mode="outlined" 
-                    onPress={handleViewDetails}
-                    style={styles.detailsButton}
-                    compact
-                  >
-                    Details
-                  </Button>
                 </Card.Content>
               </Card>
               
-              {/* Recent Drinks */}
-              <Card style={styles.recentCard}>
+              <Card style={styles.summaryCard}>
                 <Card.Content>
-                  <Text style={styles.sectionTitle}>Recent</Text>
-                  {recentDrinks.length > 0 ? (
-                    recentDrinks.map(drink => (
-                      <View key={drink.id} style={styles.drinkItem}>
-                        <View style={styles.drinkInfo}>
-                          <Text style={styles.drinkDescription}>{drink.drink}</Text>
-                          <Text style={styles.drinkDateTime}>{drink.date} {drink.time}</Text>
-                        </View>
-                        <View style={styles.drinkActions}>
-                          <IconButton
-                            icon="pencil"
-                            size={20}
-                            onPress={() => handleEditDrink(drink.id)}
-                            iconColor={colors.primary}
-                            style={styles.editButton}
-                          />
-                        </View>
+                  <Text style={styles.sectionTitle}>Monthly Summary</Text>
+                  <View style={styles.summaryContent}>
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryLabel}>Total</Text>
+                      <Text style={styles.summaryValue}>{monthlyConsumption}</Text>
+                      <View style={styles.trendContainer}>
+                        <MaterialCommunityIcons 
+                          name={monthlyTrend >= 0 ? "trending-up" : "trending-down"} 
+                          size={16} 
+                          color={monthlyTrend >= 0 ? colors.success : colors.error} 
+                        />
+                        <Text style={[styles.trendText, { color: monthlyTrend >= 0 ? colors.success : colors.error }]}>
+                          {Math.abs(monthlyTrend).toFixed(1)}%
+                        </Text>
                       </View>
-                    ))
-                  ) : (
-                    <Text style={styles.emptyMessage}>No drinks recorded yet</Text>
-                  )}
+                    </View>
+                    <View style={styles.summaryItem}>
+                      <Text style={styles.summaryLabel}>Daily Average</Text>
+                      <Text style={styles.summaryValue}>
+                        {(monthlyConsumption / new Date().getDate()).toFixed(1)}
+                      </Text>
+                    </View>
+                  </View>
+                </Card.Content>
+              </Card>
+            </View>
+            
+            {/* Recent Drinks */}
+            <Card style={styles.recentCard}>
+              <Card.Content>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Recent Drinks</Text>
                   <Button 
                     mode="contained" 
                     onPress={handleAddDrink}
@@ -394,9 +483,30 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
                   >
                     Add Drink
                   </Button>
-                </Card.Content>
-              </Card>
-            </View>
+                </View>
+                {recentDrinks.length > 0 ? (
+                  recentDrinks.map(drink => (
+                    <View key={drink.id} style={styles.drinkItem}>
+                      <View style={styles.drinkInfo}>
+                        <Text style={styles.drinkDescription}>{drink.drink}</Text>
+                        <Text style={styles.drinkDateTime}>{drink.date} {drink.time}</Text>
+                      </View>
+                      <View style={styles.drinkActions}>
+                        <IconButton
+                          icon="pencil"
+                          size={20}
+                          onPress={() => handleEditDrink(drink.id)}
+                          iconColor={colors.primary}
+                          style={styles.editButton}
+                        />
+                      </View>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.emptyMessage}>No drinks recorded yet</Text>
+                )}
+              </Card.Content>
+            </Card>
           </View>
         </>
       )}
@@ -420,14 +530,14 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   header: {
-    padding: 12,
+    padding: 16,
     paddingTop: 40,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
     color: colors.primary,
   },
@@ -440,7 +550,7 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
   },
   devToolsCard: {
-    margin: 12,
+    margin: 16,
     backgroundColor: colors.surface,
     borderRadius: 12,
     elevation: 2,
@@ -468,10 +578,10 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 12,
+    padding: 16,
   },
   glassCard: {
-    marginBottom: 12,
+    marginBottom: 16,
     backgroundColor: colors.surface,
     borderRadius: 12,
     elevation: 2,
@@ -498,16 +608,16 @@ const styles = StyleSheet.create({
   },
   glassFill: {
     width: '100%',
-    backgroundColor: colors.primary + '40', // 40% opacity
+    backgroundColor: colors.primary + '40',
     borderBottomLeftRadius: 40,
     borderBottomRightRadius: 40,
   },
   consumptionInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 16,
   },
   consumptionAmount: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
     color: colors.text,
   },
@@ -527,20 +637,23 @@ const styles = StyleSheet.create({
     color: colors.text,
     opacity: 0.7,
   },
-  bottomRow: {
-    flexDirection: 'row',
-    flex: 1,
-  },
-  summaryCard: {
-    flex: 1,
-    marginRight: 6,
+  chartCard: {
+    marginBottom: 16,
     backgroundColor: colors.surface,
     borderRadius: 12,
     elevation: 2,
   },
-  recentCard: {
+  chart: {
+    marginVertical: 8,
+    borderRadius: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  summaryCard: {
     flex: 1,
-    marginLeft: 6,
+    marginHorizontal: 8,
     backgroundColor: colors.surface,
     borderRadius: 12,
     elevation: 2,
@@ -552,12 +665,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   summaryContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   summaryItem: {
-    alignItems: 'center',
+    marginBottom: 8,
   },
   summaryLabel: {
     fontSize: 12,
@@ -565,18 +676,37 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   summaryValue: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: colors.text,
+    color: colors.primary,
   },
-  detailsButton: {
-    marginTop: 8,
+  trendContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  trendText: {
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  recentCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    elevation: 2,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   drinkItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.background,
   },
   drinkInfo: {
     flex: 1,
@@ -600,12 +730,12 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   emptyMessage: {
-    fontSize: 14,
+    textAlign: 'center',
     color: colors.text,
     opacity: 0.7,
-    marginBottom: 12,
+    marginVertical: 12,
   },
   addButton: {
-    marginTop: 8,
+    marginLeft: 8,
   },
 }); 

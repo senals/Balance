@@ -7,6 +7,7 @@ import { useApp } from '../../context/AppContext';
 import { dataService } from '../../services/dataService';
 import { DrinkEntry } from '../../services/storage';
 import { IBudgetDocument } from '../../models/Budget';
+import { storage } from '../../services/storage';
 
 export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
   const { drinks, budget, error, currentUser, updateBudget, setDrinks } = useApp();
@@ -30,31 +31,66 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
     
     setLoading(true);
     try {
-      // Fetch transactions (drinks)
-      const transactions = await dataService.transactions.getAll(currentUser.id);
+      // Check API availability first
+      const isApiAvailable = await dataService.isApiAvailable();
+      setApiAvailable(isApiAvailable);
       
-      if (transactions) {
-        // Convert API transactions to drink format
-        const apiDrinks = Array.isArray(transactions) ? transactions.map((t: any) => ({
-          id: t._id || t.id,
-          category: t.category || 'Other',
-          type: t.type || 'Unknown',
-          brand: t.description || t.brand || 'Unknown',
-          alcoholContent: t.alcoholContent || 0,
-          quantity: t.quantity || 1,
-          price: t.amount || t.price || 0,
-          timestamp: t.date || t.timestamp || new Date().toISOString(),
-          userId: t.userId || currentUser.id
-        })) : [];
+      if (isApiAvailable) {
+        // Fetch from API
+        const [transactions, apiBudget] = await Promise.all([
+          dataService.transactions.getAll(currentUser.id),
+          dataService.budget.get(currentUser.id)
+        ]);
         
-        // Update drinks in context
-        setDrinks(apiDrinks);
-      }
-      
-      // Fetch budget
-      const apiBudget = await dataService.budget.get(currentUser.id);
-      if (apiBudget) {
-        updateBudget(apiBudget);
+        if (transactions) {
+          // Convert API transactions to drink format
+          const apiDrinks = Array.isArray(transactions) ? transactions.map((t: any) => ({
+            id: t._id || t.id,
+            category: t.category || 'Other',
+            type: t.type || 'Unknown',
+            brand: t.description || t.brand || 'Unknown',
+            alcoholContent: t.alcoholContent || 0,
+            quantity: t.quantity || 1,
+            price: t.amount || t.price || 0,
+            timestamp: t.date || t.timestamp || new Date().toISOString(),
+            userId: t.userId || currentUser.id
+          })) : [];
+          
+          // Update drinks in context
+          setDrinks(apiDrinks);
+        }
+        
+        if (apiBudget) {
+          // Convert to plain object before updating
+          const plainBudget = {
+            dailyBudget: apiBudget.dailyBudget,
+            weeklyBudget: apiBudget.weeklyBudget,
+            monthlyBudget: apiBudget.monthlyBudget,
+            userId: apiBudget.userId,
+            expenses: apiBudget.expenses.map(exp => ({
+              id: exp.id || String(Math.random()),
+              amount: exp.amount,
+              category: exp.category,
+              date: exp.date instanceof Date ? exp.date.toISOString() : exp.date,
+              notes: exp.notes
+            }))
+          };
+          updateBudget(plainBudget);
+        }
+      } else {
+        // Fallback to local storage
+        const [localDrinks, localBudget] = await Promise.all([
+          storage.drinks.getAll(currentUser.id),
+          storage.budget.get(currentUser.id)
+        ]);
+        
+        if (localDrinks) {
+          setDrinks(localDrinks);
+        }
+        
+        if (localBudget) {
+          updateBudget(localBudget);
+        }
       }
     } catch (error) {
       console.error('Error fetching data:', error);
@@ -271,8 +307,11 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
             <Card.Content>
               <Text style={styles.sectionTitle}>Recent</Text>
               {recentExpenses.length > 0 ? (
-                recentExpenses.map(expense => (
-                  <View key={expense.id} style={styles.expenseItem}>
+                recentExpenses.map((expense, index) => (
+                  <View 
+                    key={expense.id || `expense-${expense.type}-${expense.date}-${expense.time}-${index}`} 
+                    style={styles.expenseItem}
+                  >
                     <View style={styles.expenseInfo}>
                       <Text style={styles.expenseDescription}>{expense.description}</Text>
                       <Text style={styles.expenseDateTime}>{expense.date} {expense.time}</Text>

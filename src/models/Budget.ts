@@ -1,9 +1,10 @@
 import { Document, Schema, model, Model } from 'mongoose';
 
 export interface IExpense {
+  id?: string;
   amount: number;
   category: string;
-  date: Date;
+  date: string | Date;
   notes?: string;
 }
 

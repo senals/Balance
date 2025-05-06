@@ -117,10 +117,21 @@ export const userApi = {
 // Check API connection
 export const checkApiConnection = async (): Promise<boolean> => {
   try {
-    const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.HEALTH}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    
+    const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.HEALTH}`, {
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
     return response.ok;
-  } catch (error) {
-    console.error('API connection check failed:', error);
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.warn('API connection check timed out');
+    } else {
+      console.error('API connection check failed:', error);
+    }
     return false;
   }
 }; 

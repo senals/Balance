@@ -1,6 +1,8 @@
 import { transactionApi, budgetApi, userApi, checkApiConnection } from './api';
 import { storage, STORAGE_KEYS, StorageError } from './storage';
 import { Budget, IBudget, IBudgetDocument, IExpense } from '../models/Budget';
+import { drinkApi } from './drinkApi';
+import { DrinkEntry } from './storage';
 
 // Add API configuration interface
 interface ApiConfig {
@@ -18,6 +20,16 @@ interface Transaction {
   amount: number;
   type: string;
   timestamp: number;
+}
+
+// Extend DrinkEntry interface to include updatedAt
+interface DrinkEntryWithTimestamp extends DrinkEntry {
+  updatedAt: string;
+}
+
+// Extend IBudget interface to include updatedAt
+interface IBudgetWithTimestamp extends IBudget {
+  updatedAt: string;
 }
 
 // Data service that combines local storage and API
@@ -304,6 +316,83 @@ export const dataService = {
     for (let i = 0; i < changes.length; i += batchSize) {
       const batch = changes.slice(i, i + batchSize);
       await this.apiConfig.api.sync(batch);
+    }
+  },
+
+  // Add syncLocalAndRemoteData method
+  async syncLocalAndRemoteData(userId: string): Promise<void> {
+    try {
+      // First, get data from local storage
+      const localDrinks = await storage.drinks.getAll(userId);
+      const localBudget = await storage.budget.get(userId);
+      
+      // Check if API is available
+      const isApiAvailable = await this.isApiAvailable();
+      
+      if (isApiAvailable) {
+        // Try to get data from API
+        try {
+          const apiDrinks = await drinkApi.getAll(userId) as DrinkEntryWithTimestamp[];
+          const apiBudget = await this.budget.get(userId) as IBudgetWithTimestamp;
+          
+          // Check which is more recent and merge accordingly
+          if (apiDrinks && apiDrinks.length > 0) {
+            // Sync API data to local storage
+            await Promise.all(apiDrinks.map(async (drink: DrinkEntryWithTimestamp) => {
+              const existingDrink = localDrinks.find(d => d.id === drink.id);
+              if (!existingDrink) {
+                // New drink from API, add to local storage
+                await storage.drinks.update(drink.id, drink);
+              } else if (new Date(drink.updatedAt) > new Date((existingDrink as DrinkEntryWithTimestamp).updatedAt)) {
+                // API drink is newer, update local storage
+                await storage.drinks.update(drink.id, drink);
+              }
+            }));
+            
+            // Also check for local drinks not in the API
+            await Promise.all(localDrinks.map(async (drink) => {
+              const existsInApi = apiDrinks.some((d: DrinkEntryWithTimestamp) => d.id === drink.id);
+              if (!existsInApi) {
+                // Local drink not in API, upload to API
+                try {
+                  await drinkApi.create(drink, userId);
+                } catch (error) {
+                  console.warn(`Failed to upload local drink ${drink.id} to API:`, error);
+                }
+              }
+            }));
+          }
+          
+          // Similar logic for budget
+          if (apiBudget && (!localBudget || new Date(apiBudget.updatedAt) > new Date((localBudget as IBudgetWithTimestamp).updatedAt))) {
+            await storage.budget.save({
+              dailyBudget: apiBudget.dailyBudget,
+              weeklyBudget: apiBudget.weeklyBudget,
+              monthlyBudget: apiBudget.monthlyBudget,
+              userId: apiBudget.userId,
+              expenses: apiBudget.expenses.map(exp => ({
+                id: exp.id || String(Math.random()),
+                amount: exp.amount,
+                category: exp.category,
+                date: exp.date,
+                notes: exp.notes
+              }))
+            });
+          } else if (localBudget && !apiBudget) {
+            // Local budget exists but not in API, upload
+            try {
+              await this.budget.update(userId, localBudget);
+            } catch (error) {
+              console.warn('Failed to upload local budget to API:', error);
+            }
+          }
+        } catch (apiError) {
+          console.warn('Error syncing with API:', apiError);
+          // Continue with local data
+        }
+      }
+    } catch (error) {
+      console.error('Error during data synchronization:', error);
     }
   },
 

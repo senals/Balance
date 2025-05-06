@@ -324,8 +324,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }));
         setDrinks(formattedDrinks);
       } catch (drinkError) {
-        console.error('Error loading drinks:', drinkError);
-        setDrinks([]);
+        console.error('Error loading drinks from MongoDB, falling back to local storage:', drinkError);
+        // Fall back to local storage
+        const localDrinks = await storage.drinks.getAll(userId);
+        setDrinks(localDrinks);
       }
       
       // Load budget

@@ -9,6 +9,7 @@ import { DrinkEntry } from '../../services/storage';
 import { IBudgetDocument } from '../../models/Budget';
 import { storage } from '../../services/storage';
 import { drinkApi } from '../../services/drinkApi';
+import { API_CONFIG } from '../../config/api.config';
 
 export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
   const { drinks, budget, error, currentUser, updateBudget, setDrinks } = useApp();
@@ -17,12 +18,118 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
   const [apiAvailable, setApiAvailable] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   const [testTransaction, setTestTransaction] = useState<any>(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   // Debug logging function
-  const addDebugLog = (message: string) => {
-    console.log(`[BudgetTracker Debug] ${message}`);
-    setDebugInfo(prev => [...prev, `${new Date().toLocaleTimeString()}: ${message}`].slice(-10));
+  const addDebugLog = (message: string, data?: any) => {
+    const timestamp = new Date().toLocaleTimeString();
+    let logMessage = `[${timestamp}] ${message}`;
+    
+    if (data) {
+      try {
+        const dataString = typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data);
+        logMessage += `\nData: ${dataString}`;
+      } catch (e) {
+        logMessage += `\nData: [Unable to stringify]`;
+      }
+    }
+    
+    console.log(logMessage);
+    setDebugInfo(prev => [logMessage, ...prev].slice(-20));
   };
+
+  // Calculate daily spending
+  const today = new Date().toISOString().split('T')[0];
+  
+  // Get expenses from both drinks and budget.expenses
+  const dailyDrinks = drinks.filter(drink => {
+    const drinkDate = new Date(drink.timestamp).toISOString().split('T')[0];
+    return drinkDate === today;
+  });
+  const dailyDrinksSpent = dailyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
+  
+  const dailyExpenses = budget?.expenses?.filter(expense => {
+    const expenseDate = new Date(expense.date).toISOString().split('T')[0];
+    return expenseDate === today;
+  }) || [];
+  const dailyExpensesSpent = dailyExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
+  
+  const dailySpent = dailyDrinksSpent + dailyExpensesSpent;
+  const dailyBudget = budget?.dailyBudget || 0;
+
+  // Calculate weekly spending
+  const weekStart = new Date();
+  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+  
+  const weeklyDrinks = drinks.filter(drink => 
+    new Date(drink.timestamp) >= weekStart
+  );
+  const weeklyDrinksSpent = weeklyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
+  
+  const weeklyExpenses = budget?.expenses?.filter(expense => 
+    new Date(expense.date) >= weekStart
+  ) || [];
+  const weeklyExpensesSpent = weeklyExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
+  
+  const weeklySpent = weeklyDrinksSpent + weeklyExpensesSpent;
+  const weeklyBudget = budget?.weeklyBudget || 0;
+
+  // Calculate monthly spending
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  
+  const monthlyDrinks = drinks.filter(drink => 
+    new Date(drink.timestamp) >= monthStart
+  );
+  const monthlyDrinksSpent = monthlyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
+  
+  const monthlyExpenses = budget?.expenses?.filter(expense => 
+    new Date(expense.date) >= monthStart
+  ) || [];
+  const monthlyExpensesSpent = monthlyExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
+  
+  const monthlySpent = monthlyDrinksSpent + monthlyExpensesSpent;
+  const monthlyBudget = budget?.monthlyBudget || 0;
+
+  const progressPercentage = dailyBudget > 0 ? dailySpent / dailyBudget : 0;
+
+  // Enhanced debug information
+  const debugBudgetInfo = {
+    budget: {
+      dailyBudget: budget?.dailyBudget,
+      weeklyBudget: budget?.weeklyBudget,
+      monthlyBudget: budget?.monthlyBudget,
+      expensesCount: budget?.expenses?.length || 0,
+      expenses: budget?.expenses?.slice(0, 3) // Show first 3 expenses
+    },
+    drinks: {
+      totalCount: drinks.length,
+      withPrice: drinks.filter(d => d.price > 0).length,
+      totalSpent: drinks.reduce((sum, d) => sum + (d.price || 0), 0),
+      recentDrinks: drinks.slice(0, 3) // Show first 3 drinks
+    },
+    calculations: {
+      dailySpent,
+      weeklySpent,
+      monthlySpent,
+      dailyBudget,
+      weeklyBudget,
+      monthlyBudget,
+      progressPercentage
+    },
+    state: {
+      loading,
+      refreshing,
+      apiAvailable,
+      currentUser: currentUser?.id,
+      error
+    }
+  };
+
+  // Log debug info on mount and when data changes
+  useEffect(() => {
+    addDebugLog('Budget Tracker State Updated', debugBudgetInfo);
+  }, [budget, drinks, loading, refreshing, apiAvailable, currentUser, error]);
 
   // Test transaction creation
   const createTestTransaction = async () => {
@@ -93,75 +200,80 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
     addDebugLog(`Starting data fetch for user: ${currentUser.id}`);
     
     try {
-      // Check API availability first
-      const isApiAvailable = await dataService.isApiAvailable();
-      setApiAvailable(isApiAvailable);
-      addDebugLog(`API Check: ${isApiAvailable}`);
+      // Always try local storage first to ensure we have some data
+      const [localDrinks, localBudget] = await Promise.all([
+        storage.drinks.getAll(currentUser.id),
+        storage.budget.get(currentUser.id)
+      ]);
       
-      if (isApiAvailable) {
-        addDebugLog('Fetching from API...');
-        try {
-          // Get drinks from API
-          const apiDrinks = await drinkApi.getAll(currentUser.id);
-          addDebugLog(`Raw drinks response: ${JSON.stringify(apiDrinks)}`);
-          addDebugLog(`API Drinks: ${apiDrinks?.length || 0} items`);
-          
-          // Update drinks in context
-          setDrinks(apiDrinks);
-          
-          // Get budget from API
-          const apiBudget = await dataService.budget.get(currentUser.id);
-          addDebugLog(`Raw budget response: ${JSON.stringify(apiBudget)}`);
-          addDebugLog(`API Budget: ${apiBudget ? 'Found' : 'Not found'}`);
-          
-          if (apiBudget) {
-            addDebugLog('Updating budget from API');
-            // Convert to plain object before updating
-            const plainBudget = {
-              dailyBudget: apiBudget.dailyBudget,
-              weeklyBudget: apiBudget.weeklyBudget,
-              monthlyBudget: apiBudget.monthlyBudget,
-              userId: apiBudget.userId,
-              expenses: apiBudget.expenses.map(exp => ({
-                id: exp.id || String(Math.random()),
-                amount: exp.amount,
-                category: exp.category,
-                date: exp.date instanceof Date ? exp.date.toISOString() : exp.date,
-                notes: exp.notes
-              }))
-            };
-            updateBudget(plainBudget);
+      // Set state with local data immediately
+      if (localDrinks?.length > 0) {
+        setDrinks(localDrinks);
+        addDebugLog(`Loaded ${localDrinks.length} drinks from local storage`);
+      }
+      
+      if (localBudget) {
+        updateBudget(localBudget);
+        addDebugLog(`Loaded budget from local storage`);
+      }
+      
+      // Check API availability with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      
+      try {
+        const response = await fetch(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.HEALTH}`, {
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        const isApiAvailable = response.ok;
+        setApiAvailable(isApiAvailable);
+        addDebugLog(`API Check: ${isApiAvailable}`);
+        
+        if (isApiAvailable) {
+          try {
+            // Get drinks from API
+            const apiDrinks = await drinkApi.getAll(currentUser.id);
+            if (Array.isArray(apiDrinks) && apiDrinks.length > 0) {
+              setDrinks(apiDrinks);
+              addDebugLog(`Updated with ${apiDrinks.length} drinks from API`);
+            }
+            
+            // Get budget from API
+            const apiBudget = await dataService.budget.get(currentUser.id);
+            if (apiBudget) {
+              const budgetData = {
+                dailyBudget: apiBudget.dailyBudget,
+                weeklyBudget: apiBudget.weeklyBudget,
+                monthlyBudget: apiBudget.monthlyBudget,
+                userId: apiBudget.userId,
+                expenses: apiBudget.expenses.map(exp => ({
+                  id: exp.id || String(Math.random()),
+                  amount: exp.amount,
+                  category: exp.category,
+                  date: exp.date instanceof Date ? exp.date.toISOString() : exp.date,
+                  notes: exp.notes
+                }))
+              };
+              updateBudget(budgetData);
+              addDebugLog(`Updated budget from API`);
+            }
+          } catch (apiError: any) {
+            addDebugLog(`API operations failed: ${apiError.message}`);
+            // Continue with local data, don't reset app state
           }
-        } catch (error: any) {
-          addDebugLog(`Error in API operations: ${error.message}`);
-          console.error('Error in API operations:', error);
         }
-      } else {
-        addDebugLog('Falling back to local storage');
-        try {
-          const [localDrinks, localBudget] = await Promise.all([
-            storage.drinks.getAll(currentUser.id),
-            storage.budget.get(currentUser.id)
-          ]);
-          
-          addDebugLog(`Local drinks: ${localDrinks?.length || 0} items`);
-          addDebugLog(`Local budget: ${localBudget ? 'Found' : 'Not found'}`);
-          
-          if (localDrinks) {
-            setDrinks(localDrinks);
-          }
-          
-          if (localBudget) {
-            updateBudget(localBudget);
-          }
-        } catch (error: any) {
-          addDebugLog(`Error in local storage operations: ${error.message}`);
-          console.error('Error in local storage operations:', error);
+      } catch (error: any) {
+        if (error.name === 'AbortError') {
+          addDebugLog('API check timed out');
+        } else {
+          addDebugLog(`API check failed: ${error.message}`);
         }
+        setApiAvailable(false);
       }
     } catch (error: any) {
       addDebugLog(`Error fetching data: ${error.message}`);
-      console.error('Error fetching data:', error);
+      // Don't throw - use whatever data we have
     } finally {
       setLoading(false);
       addDebugLog('Data fetch completed');
@@ -170,7 +282,21 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
 
   // Initial data fetch
   useEffect(() => {
-    fetchData();
+    const initialize = async () => {
+      if (!currentUser?.id) return;
+      
+      try {
+        // First sync data between local storage and API
+        await dataService.syncLocalAndRemoteData(currentUser.id);
+        
+        // Then fetch the latest data
+        await fetchData();
+      } catch (error: any) {
+        addDebugLog(`Error during initialization: ${error.message}`);
+      }
+    };
+    
+    initialize();
   }, [currentUser?.id]);
 
   // Handle refresh
@@ -179,59 +305,6 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
     await fetchData();
     setRefreshing(false);
   };
-
-  // Calculate daily spending
-  const today = new Date().toISOString().split('T')[0];
-  
-  // Get expenses from both drinks and budget.expenses
-  const dailyDrinks = drinks.filter(drink => {
-    const drinkDate = new Date(drink.timestamp).toISOString().split('T')[0];
-    return drinkDate === today;
-  });
-  const dailyDrinksSpent = dailyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
-  
-  const dailyExpenses = budget?.expenses?.filter(expense => {
-    const expenseDate = new Date(expense.date).toISOString().split('T')[0];
-    return expenseDate === today;
-  }) || [];
-  const dailyExpensesSpent = dailyExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
-  
-  const dailySpent = dailyDrinksSpent + dailyExpensesSpent;
-  const dailyBudget = budget?.dailyBudget || 0;
-
-  // Calculate weekly spending
-  const weekStart = new Date();
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-  
-  const weeklyDrinks = drinks.filter(drink => 
-    new Date(drink.timestamp) >= weekStart
-  );
-  const weeklyDrinksSpent = weeklyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
-  
-  const weeklyExpenses = budget?.expenses?.filter(expense => 
-    new Date(expense.date) >= weekStart
-  ) || [];
-  const weeklyExpensesSpent = weeklyExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
-  
-  const weeklySpent = weeklyDrinksSpent + weeklyExpensesSpent;
-  const weeklyBudget = budget?.weeklyBudget || 0;
-
-  // Calculate monthly spending
-  const monthStart = new Date();
-  monthStart.setDate(1);
-  
-  const monthlyDrinks = drinks.filter(drink => 
-    new Date(drink.timestamp) >= monthStart
-  );
-  const monthlyDrinksSpent = monthlyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
-  
-  const monthlyExpenses = budget?.expenses?.filter(expense => 
-    new Date(expense.date) >= monthStart
-  ) || [];
-  const monthlyExpensesSpent = monthlyExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
-  
-  const monthlySpent = monthlyDrinksSpent + monthlyExpensesSpent;
-  const monthlyBudget = budget?.monthlyBudget || 0;
 
   // Get recent expenses from both drinks and budget.expenses
   const recentDrinks = [...drinks]
@@ -258,8 +331,6 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
   const recentExpenses = [...recentDrinks, ...recentBudgetExpenses]
     .sort((a, b) => new Date(b.date + ' ' + b.time).getTime() - new Date(a.date + ' ' + a.time).getTime())
     .slice(0, 5);
-  
-  const progressPercentage = dailyBudget > 0 ? dailySpent / dailyBudget : 0;
   
   const handleAddExpense = () => {
     navigation.navigate('DrinkInput');
@@ -288,17 +359,46 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
       {/* Debug Panel */}
       <Card style={styles.debugCard}>
         <Card.Content>
-          <Text style={styles.debugTitle}>Debug Information</Text>
-          {debugInfo.map((log, index) => (
-            <Text key={index} style={styles.debugText}>{log}</Text>
-          ))}
-          <Button 
-            mode="contained" 
-            onPress={createTestTransaction}
-            style={styles.testButton}
-          >
-            Create Test Transaction
-          </Button>
+          <View style={styles.debugHeader}>
+            <Text style={styles.debugTitle}>Debug Information</Text>
+            <Button 
+              mode="text"
+              onPress={() => setShowDebug(!showDebug)}
+              icon={showDebug ? "chevron-up" : "chevron-down"}
+            >
+              {showDebug ? "Hide" : "Show"}
+            </Button>
+          </View>
+          {showDebug && (
+            <>
+              <View style={styles.debugSection}>
+                <Text style={styles.debugSubtitle}>Current State</Text>
+                <Text style={styles.debugText}>
+                  User ID: {currentUser?.id || 'Not available'}{'\n'}
+                  API Available: {apiAvailable ? 'Yes' : 'No'}{'\n'}
+                  Loading: {loading ? 'Yes' : 'No'}{'\n'}
+                  Refreshing: {refreshing ? 'Yes' : 'No'}{'\n'}
+                  Error: {error || 'None'}{'\n'}
+                  Drinks Count: {drinks.length}{'\n'}
+                  Budget Expenses Count: {budget?.expenses?.length || 0}{'\n'}
+                  Daily Budget: £{dailyBudget}{'\n'}
+                  Daily Spent: £{dailySpent}{'\n'}
+                  Weekly Budget: £{weeklyBudget}{'\n'}
+                  Weekly Spent: £{weeklySpent}{'\n'}
+                  Monthly Budget: £{monthlyBudget}{'\n'}
+                  Monthly Spent: £{monthlySpent}
+                </Text>
+              </View>
+              <View style={styles.debugSection}>
+                <Text style={styles.debugSubtitle}>Recent Logs</Text>
+                {debugInfo.map((log, index) => (
+                  <Text key={`debug-${index}-${Date.now()}`} style={styles.debugText}>
+                    {log}
+                  </Text>
+                ))}
+              </View>
+            </>
+          )}
         </Card.Content>
       </Card>
 
@@ -612,10 +712,24 @@ const styles = StyleSheet.create({
     margin: 10,
     backgroundColor: '#fff0d4',
   },
+  debugHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   debugTitle: {
     fontSize: 14,
     fontWeight: 'bold',
     marginBottom: 8,
+    color: '#666',
+  },
+  debugSection: {
+    marginBottom: 10,
+  },
+  debugSubtitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 4,
     color: '#666',
   },
   debugText: {

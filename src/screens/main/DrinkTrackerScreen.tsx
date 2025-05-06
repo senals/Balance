@@ -20,13 +20,25 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
     return { hasError: true, error };
   }
 
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
+  }
+
+  handleRetry = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
   render() {
     if (this.state.hasError) {
       return (
         <View style={styles.errorContainer}>
           <Text style={styles.errorTitle}>Something went wrong</Text>
           <Text style={styles.errorMessage}>{this.state.error?.message}</Text>
-          <Button mode="contained" onPress={() => this.setState({ hasError: false, error: null })}>
+          <Button 
+            mode="contained" 
+            onPress={this.handleRetry}
+            style={styles.retryButton}
+          >
             Try Again
           </Button>
         </View>
@@ -166,92 +178,81 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
         setLoading(true);
         setErrorState(null);
 
-        // Check API availability
-        const response = await fetch('http://localhost:5000/api/health');
-        const isApiAvailable = response.status === 200;
-        setApiAvailable(isApiAvailable);
-        addDebugLog('API health check', {
-          status: response.status,
-          available: isApiAvailable,
-          url: 'http://localhost:5000/api/health',
-          responseTime: new Date().toISOString()
-        });
-
-        // Load initial data
-        if (isApiAvailable && currentUser?.id) {
-          addDebugLog(`Fetching drinks for user ${currentUser.id}`);
-          const apiDrinks = await drinkApi.getAll(currentUser.id);
-          
-          if (Array.isArray(apiDrinks)) {
-            const analysis = analyzeDrinks(apiDrinks);
-            addDebugLog('API drinks analysis', {
-              totalDrinks: analysis.totalDrinks,
-              totalQuantity: analysis.totalQuantity,
-              categories: analysis.categories,
-              types: analysis.types,
-              brands: analysis.brands,
-              timeRange: {
-                start: analysis.timeRange.start.toISOString(),
-                end: analysis.timeRange.end.toISOString(),
-                duration: `${Math.round((analysis.timeRange.end.getTime() - analysis.timeRange.start.getTime()) / (1000 * 60 * 60 * 24))} days`
-              },
-              validation: {
-                valid: analysis.validation.filter(v => v.isValid).length,
-                invalid: analysis.validation.filter(v => !v.isValid).length,
-                issues: analysis.validation
-                  .filter(v => !v.isValid)
-                  .map(v => ({
-                    missingFields: v.missingFields,
-                    invalidFields: v.invalidFields
-                  }))
-              }
-            });
-            
-            setDrinks(apiDrinks);
-            addDebugLog(`Loaded ${apiDrinks.length} drinks from API`);
-          } else {
-            throw new Error('Invalid response format from API');
-          }
-        } else {
-          addDebugLog('Using local storage for drinks', {
-            reason: !isApiAvailable ? 'API unavailable' : 'No user ID',
-            userId: currentUser?.id,
+        // Check API availability with better error handling
+        try {
+          const response = await fetch('http://localhost:5000/api/health');
+          const isApiAvailable = response.status === 200;
+          setApiAvailable(isApiAvailable);
+          addDebugLog('API health check', {
+            status: response.status,
+            available: isApiAvailable,
+            url: 'http://localhost:5000/api/health',
+            responseTime: new Date().toISOString()
+          });
+        } catch (apiError) {
+          console.error('API health check failed:', apiError);
+          setApiAvailable(false);
+          addDebugLog('API health check failed', {
+            error: apiError instanceof Error ? apiError.message : 'Unknown error',
             currentTime: new Date().toISOString()
           });
-          
-          const localDrinks = await storage.drinks.getAll(currentUser?.id || '');
-          const analysis = analyzeDrinks(localDrinks);
-          addDebugLog('Local storage drinks analysis', {
-            totalDrinks: analysis.totalDrinks,
-            totalQuantity: analysis.totalQuantity,
-            categories: analysis.categories,
-            types: analysis.types,
-            brands: analysis.brands,
-            timeRange: {
-              start: analysis.timeRange.start.toISOString(),
-              end: analysis.timeRange.end.toISOString(),
-              duration: `${Math.round((analysis.timeRange.end.getTime() - analysis.timeRange.start.getTime()) / (1000 * 60 * 60 * 24))} days`
-            },
-            validation: {
-              valid: analysis.validation.filter(v => v.isValid).length,
-              invalid: analysis.validation.filter(v => !v.isValid).length,
-              issues: analysis.validation
-                .filter(v => !v.isValid)
-                .map(v => ({
-                  missingFields: v.missingFields,
-                  invalidFields: v.invalidFields
-                }))
+        }
+
+        // Load initial data with better error handling
+        if (apiAvailable && currentUser?.id) {
+          try {
+            addDebugLog(`Fetching drinks for user ${currentUser.id}`);
+            const apiDrinks = await drinkApi.getAll(currentUser.id);
+            
+            if (Array.isArray(apiDrinks)) {
+              const analysis = analyzeDrinks(apiDrinks);
+              addDebugLog('API drinks analysis', {
+                totalDrinks: analysis.totalDrinks,
+                totalQuantity: analysis.totalQuantity,
+                categories: analysis.categories,
+                types: analysis.types,
+                brands: analysis.brands,
+                timeRange: {
+                  start: analysis.timeRange.start.toISOString(),
+                  end: analysis.timeRange.end.toISOString(),
+                  duration: `${Math.round((analysis.timeRange.end.getTime() - analysis.timeRange.start.getTime()) / (1000 * 60 * 60 * 24))} days`
+                },
+                validation: {
+                  valid: analysis.validation.filter(v => v.isValid).length,
+                  invalid: analysis.validation.filter(v => !v.isValid).length,
+                  issues: analysis.validation
+                    .filter(v => !v.isValid)
+                    .map(v => ({
+                      missingFields: v.missingFields,
+                      invalidFields: v.invalidFields
+                    }))
+                }
+              });
+              
+              setDrinks(apiDrinks);
+              addDebugLog(`Loaded ${apiDrinks.length} drinks from API`);
+            } else {
+              throw new Error('Invalid response format from API');
             }
-          });
-          
-          setDrinks(localDrinks);
-          addDebugLog(`Loaded ${localDrinks.length} drinks from local storage`);
+          } catch (apiError) {
+            console.error('Failed to load drinks from API:', apiError);
+            addDebugLog('API drinks load failed', {
+              error: apiError instanceof Error ? apiError.message : 'Unknown error',
+              userId: currentUser.id,
+              currentTime: new Date().toISOString()
+            });
+            // Fall back to local storage
+            await loadLocalDrinks();
+          }
+        } else {
+          await loadLocalDrinks();
         }
 
         setLoading(false);
         addDebugLog('Drink tracker initialized successfully');
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+        console.error('Initialization error:', error);
         addDebugLog('Initialization error', {
           error: errorMessage,
           stack: error instanceof Error ? error.stack : undefined,
@@ -266,6 +267,52 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
         
         setErrorState('Failed to load drinks. Please try again.');
         setLoading(false);
+      }
+    };
+
+    const loadLocalDrinks = async () => {
+      try {
+        addDebugLog('Using local storage for drinks', {
+          reason: !apiAvailable ? 'API unavailable' : 'No user ID',
+          userId: currentUser?.id,
+          currentTime: new Date().toISOString()
+        });
+        
+        const localDrinks = await storage.drinks.getAll(currentUser?.id || '');
+        const analysis = analyzeDrinks(localDrinks);
+        addDebugLog('Local storage drinks analysis', {
+          totalDrinks: analysis.totalDrinks,
+          totalQuantity: analysis.totalQuantity,
+          categories: analysis.categories,
+          types: analysis.types,
+          brands: analysis.brands,
+          timeRange: {
+            start: analysis.timeRange.start.toISOString(),
+            end: analysis.timeRange.end.toISOString(),
+            duration: `${Math.round((analysis.timeRange.end.getTime() - analysis.timeRange.start.getTime()) / (1000 * 60 * 60 * 24))} days`
+          },
+          validation: {
+            valid: analysis.validation.filter(v => v.isValid).length,
+            invalid: analysis.validation.filter(v => !v.isValid).length,
+            issues: analysis.validation
+              .filter(v => !v.isValid)
+              .map(v => ({
+                missingFields: v.missingFields,
+                invalidFields: v.invalidFields
+              }))
+          }
+        });
+        
+        setDrinks(localDrinks);
+        addDebugLog(`Loaded ${localDrinks.length} drinks from local storage`);
+      } catch (storageError) {
+        console.error('Failed to load drinks from local storage:', storageError);
+        addDebugLog('Local storage load failed', {
+          error: storageError instanceof Error ? storageError.message : 'Unknown error',
+          userId: currentUser?.id,
+          currentTime: new Date().toISOString()
+        });
+        throw storageError;
       }
     };
 
@@ -573,6 +620,17 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
                   }}
                   bezier
                   style={styles.chart}
+                  withDots={true}
+                  withInnerLines={true}
+                  withOuterLines={true}
+                  withVerticalLines={false}
+                  withHorizontalLines={true}
+                  withVerticalLabels={true}
+                  withHorizontalLabels={true}
+                  yAxisLabel=""
+                  yAxisSuffix=""
+                  yAxisInterval={1}
+                  segments={4}
                 />
               </Card.Content>
             </Card>
@@ -795,6 +853,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+    backgroundColor: '#fff7e9',
   },
   errorTitle: {
     fontSize: 20,
@@ -807,5 +866,9 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 20,
     textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 10,
+    backgroundColor: colors.primary,
   },
 }); 

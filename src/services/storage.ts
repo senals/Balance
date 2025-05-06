@@ -1,5 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { IBudget, IBudgetDocument } from '../models/Budget';
+import { DateLike } from '../types/date';
+import { encryptionService } from './encryption';
 
 // Storage keys
 export const STORAGE_KEYS = {
@@ -24,7 +26,7 @@ export interface DrinkEntry {
   price: number;
   location?: string;
   notes?: string;
-  timestamp: string;
+  timestamp: DateLike;
   userId: string;
 }
 
@@ -40,8 +42,8 @@ export interface UserProfile {
   preferredDrinks?: string[];
   favoriteVenues?: string[];
   drinkingGoals?: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: DateLike;
+  updatedAt: DateLike;
 }
 
 export interface UserSettings {
@@ -50,6 +52,13 @@ export interface UserSettings {
   privacyModeEnabled: boolean;
   dailyLimit: number;
   userId: string;
+  readinessAssessment?: {
+    primaryStage: 'pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance';
+    secondaryStage: 'pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance' | null;
+    readinessScore: number;
+    confidenceLevel: number;
+    recommendations: string[];
+  };
 }
 
 export interface BudgetData {
@@ -60,7 +69,7 @@ export interface BudgetData {
     id: string;
     amount: number;
     category: string;
-    date: string;
+    date: DateLike;
     notes?: string;
   }>;
   userId: string;
@@ -69,14 +78,14 @@ export interface BudgetData {
 export interface PreGamePlan {
   id: string;
   title: string;
-  date: string;
+  date: DateLike;
   location: string;
   maxDrinks: number;
   maxSpending: number;
   notes?: string;
   completed: boolean;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: DateLike;
+  updatedAt: DateLike;
   actualDrinks?: number;
   actualSpending?: number;
   adherenceStatus?: 'pending' | 'success' | 'exceeded';
@@ -97,8 +106,8 @@ export interface ReadinessAssessment {
     questionId: string;
     answer: number;
   }[];
-  createdAt: string;
-  updatedAt: string;
+  createdAt: DateLike;
+  updatedAt: DateLike;
 }
 
 // User account type
@@ -106,8 +115,8 @@ export interface UserAccount {
   id: string;
   email: string;
   password: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt: DateLike;
+  updatedAt: DateLike;
 }
 
 // Error class for storage operations
@@ -118,49 +127,103 @@ export class StorageError extends Error {
   }
 }
 
-// Simple in-memory cache to reduce AsyncStorage calls
-const cache: Record<string, any> = {};
+// Add cache management interface
+interface Cache {
+  [key: string]: any;
+}
+
+interface CacheExpiry {
+  [key: string]: number;
+}
+
+// Add pending changes interface
+interface PendingChange {
+  key: string;
+  value: any;
+  timestamp: number;
+}
+
+// Define which keys should be encrypted
+export const ENCRYPTED_KEYS = [
+  'user_profile',
+  'drinks',
+  'settings',
+  'budget',
+  'pre_game_plans',
+  'readiness_assessment'
+] as const;
+
+type EncryptedKey = typeof ENCRYPTED_KEYS[number];
 
 // Generic storage operations with type safety
 export const storage = {
-  async get<T>(key: string): Promise<T | null> {
-    try {
-      // Check cache first
-      if (cache[key] !== undefined) {
-        return cache[key];
-      }
-      
-      const data = await AsyncStorage.getItem(key);
-      const parsedData = data ? JSON.parse(data) : null;
-      
-      // Update cache
-      cache[key] = parsedData;
-      
-      return parsedData;
-    } catch (error) {
-      console.error(`Storage get error for key ${key}:`, error);
-      throw new StorageError(
-        `Failed to get item: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        'get',
-        key
-      );
-    }
+  // Add cache management
+  cache: {} as Cache,
+  cacheExpiry: {} as CacheExpiry,
+  CACHE_TTL: 5 * 60 * 1000, // 5 minutes
+
+  // Add pending changes tracking
+  pendingChanges: [] as PendingChange[],
+
+  // Add cache management methods
+  clearCache(): void {
+    this.cache = {};
+    this.cacheExpiry = {};
   },
 
-  async set<T>(key: string, value: T): Promise<void> {
-    try {
-      await AsyncStorage.setItem(key, JSON.stringify(value));
-      
-      // Update cache
-      cache[key] = value;
-    } catch (error) {
-      console.error(`Storage set error for key ${key}:`, error);
-      throw new StorageError(
-        `Failed to set item: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        'set',
-        key
-      );
+  // Add pending changes methods
+  getPendingChanges(): PendingChange[] {
+    return [...this.pendingChanges];
+  },
+
+  addPendingChange(change: PendingChange): void {
+    this.pendingChanges.push(change);
+  },
+
+  clearPendingChanges(): void {
+    this.pendingChanges = [];
+  },
+
+  // Modify existing get method to use cache
+  async get<T>(key: string): Promise<T | null> {
+    // Check cache first
+    if (this.cache[key] && this.cacheExpiry[key] > Date.now()) {
+      return this.cache[key];
     }
+
+    const data = await AsyncStorage.getItem(key);
+    if (!data) return null;
+
+    // Decrypt if needed
+    let parsedData;
+    if (ENCRYPTED_KEYS.includes(key as EncryptedKey)) {
+      parsedData = await encryptionService.decrypt(data);
+    } else {
+      parsedData = JSON.parse(data);
+    }
+
+    // Update cache
+    this.cache[key] = parsedData;
+    this.cacheExpiry[key] = Date.now() + this.CACHE_TTL;
+
+    return parsedData;
+  },
+
+  // Modify existing set method to track changes
+  async set<T>(key: string, value: T): Promise<void> {
+    // Update cache
+    this.cache[key] = value;
+    this.cacheExpiry[key] = Date.now() + this.CACHE_TTL;
+
+    // Track change
+    this.addPendingChange({ key, value, timestamp: Date.now() });
+
+    // Encrypt if needed
+    const dataToStore = ENCRYPTED_KEYS.includes(key as EncryptedKey)
+      ? await encryptionService.encrypt(value)
+      : JSON.stringify(value);
+
+    await AsyncStorage.setItem(key, dataToStore);
   },
 
   async remove(key: string): Promise<void> {
@@ -168,7 +231,7 @@ export const storage = {
       await AsyncStorage.removeItem(key);
       
       // Update cache
-      delete cache[key];
+      delete this.cache[key];
     } catch (error) {
       console.error(`Storage remove error for key ${key}:`, error);
       throw new StorageError(
@@ -184,7 +247,7 @@ export const storage = {
       await AsyncStorage.clear();
       
       // Clear cache
-      Object.keys(cache).forEach(key => delete cache[key]);
+      Object.keys(this.cache).forEach(key => delete this.cache[key]);
     } catch (error) {
       console.error('Storage clear error:', error);
       throw new StorageError(

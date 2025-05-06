@@ -6,12 +6,12 @@ export type RootStackParamList = {
   Main: undefined;
   DrinkInput: undefined;
   EditDrink: { drinkId: string };
-  DevTools: undefined;
   PreGamePlanner: undefined;
   EditProfile: undefined;
   Statistics: undefined;
   Settings: undefined;
   ReadinessAssessment: undefined;
+  Development: undefined;
 };
 
 export type MainTabParamList = {

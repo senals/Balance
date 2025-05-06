@@ -1,10 +1,11 @@
 import { Document, Schema, model, Model } from 'mongoose';
+import { DateLike } from '../types/date';
 
 export interface IExpense {
   id?: string;
   amount: number;
   category: string;
-  date: string | Date;
+  date: DateLike;
   notes?: string;
 }
 
@@ -18,8 +19,8 @@ export interface IBudget {
 
 export interface IBudgetDocument extends IBudget, Document {
   _id: string;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: DateLike;
+  updatedAt: DateLike;
 }
 
 export interface IBudgetModel extends Model<IBudgetDocument> {

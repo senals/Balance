@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { Text, IconButton, Card } from 'react-native-paper';
 import { colors } from '../theme/colors';
 
@@ -253,12 +253,15 @@ export const DrinkHierarchySelector: React.FC<DrinkHierarchySelectorProps> = ({
           <View style={styles.contentContainer}>
             <Text style={styles.title}>Brand not found</Text>
             <Text style={styles.subtitle}>Please select a different brand</Text>
-            <TouchableOpacity
-              style={styles.backButton}
+            <Pressable
+              style={({ pressed }) => [
+                styles.backButton,
+                pressed && { opacity: 0.8 }
+              ]}
               onPress={() => setSelectedBrand(null)}
             >
               <Text style={styles.optionText}>Go Back</Text>
-            </TouchableOpacity>
+            </Pressable>
           </View>
         );
       }
@@ -270,7 +273,7 @@ export const DrinkHierarchySelector: React.FC<DrinkHierarchySelectorProps> = ({
           <Text style={styles.alcoholContent}>Alcohol Content: {category.alcoholContent}%</Text>
         </View>
       );
-    } else if (selectedType && selectedCategory) {
+    } else if (selectedType) {
       // Show brands for selected type
       const category = DRINK_HIERARCHY[selectedCategory as keyof typeof DRINK_HIERARCHY];
       const type = category.types[selectedType as keyof typeof category.types];
@@ -280,16 +283,17 @@ export const DrinkHierarchySelector: React.FC<DrinkHierarchySelectorProps> = ({
           <Text style={styles.title}>Select {type.name}</Text>
           <View style={styles.optionsContainer}>
             {type.brands.map((brand) => (
-              <TouchableOpacity
+              <Pressable
                 key={brand}
-                style={[
+                style={({ pressed }) => [
                   styles.option,
-                  selectedBrand === brand && styles.selectedOption
+                  selectedBrand === brand && styles.selectedOption,
+                  pressed && { opacity: 0.8 }
                 ]}
                 onPress={() => handleBrandSelect(brand)}
               >
                 <Text style={styles.optionText}>{brand}</Text>
-              </TouchableOpacity>
+              </Pressable>
             ))}
           </View>
         </View>
@@ -303,16 +307,17 @@ export const DrinkHierarchySelector: React.FC<DrinkHierarchySelectorProps> = ({
           <Text style={styles.title}>Select {category.name} Type</Text>
           <View style={styles.optionsContainer}>
             {Object.entries(category.types).map(([key, type]) => (
-              <TouchableOpacity
+              <Pressable
                 key={key}
-                style={[
+                style={({ pressed }) => [
                   styles.option,
-                  selectedType === key && styles.selectedOption
+                  selectedType === key && styles.selectedOption,
+                  pressed && { opacity: 0.8 }
                 ]}
                 onPress={() => handleTypeSelect(key)}
               >
                 <Text style={styles.optionText}>{type.name}</Text>
-              </TouchableOpacity>
+              </Pressable>
             ))}
           </View>
         </View>
@@ -324,17 +329,18 @@ export const DrinkHierarchySelector: React.FC<DrinkHierarchySelectorProps> = ({
           <Text style={styles.title}>Select Drink Category</Text>
           <View style={styles.optionsContainer}>
             {Object.entries(DRINK_HIERARCHY).map(([key, category]) => (
-              <TouchableOpacity
+              <Pressable
                 key={key}
-                style={[
+                style={({ pressed }) => [
                   styles.option,
-                  selectedCategory === key && styles.selectedOption
+                  selectedCategory === key && styles.selectedOption,
+                  pressed && { opacity: 0.8 }
                 ]}
                 onPress={() => handleCategorySelect(key)}
               >
                 <Text style={styles.optionIcon}>{category.icon}</Text>
                 <Text style={styles.optionText}>{category.name}</Text>
-              </TouchableOpacity>
+              </Pressable>
             ))}
           </View>
         </View>

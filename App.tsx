@@ -12,11 +12,11 @@ import { RegisterScreen } from './src/screens/main/RegisterScreen';
 import { MainTabNavigator } from './src/navigation/MainTabNavigator';
 import { DrinkInputScreen } from './src/screens/main/DrinkInputScreen';
 import { EditDrinkScreen } from './src/screens/main/EditDrinkScreen';
-import { DevToolsScreen } from './src/screens/main/DevToolsScreen';
 import { EditProfileScreen } from './src/screens/main/EditProfileScreen';
 import { StatisticsScreen } from './src/screens/main/StatisticsScreen';
 import { SettingsScreen } from './src/screens/main/SettingsScreen';
 import { ReadinessAssessmentScreen } from './src/screens/onboarding/ReadinessAssessmentScreen';
+import { DevelopmentScreen } from './src/screens/main/DevelopmentScreen';
 
 // Import navigation types
 import { RootStackParamList } from './src/navigation/types';
@@ -46,10 +46,10 @@ const AppContent = () => {
               <Stack.Screen name="Main" component={MainTabNavigator} />
               <Stack.Screen name="DrinkInput" component={DrinkInputScreen} />
               <Stack.Screen name="EditDrink" component={EditDrinkScreen} />
-              <Stack.Screen name="DevTools" component={DevToolsScreen} />
               <Stack.Screen name="EditProfile" component={EditProfileScreen} />
               <Stack.Screen name="Statistics" component={StatisticsScreen} />
               <Stack.Screen name="Settings" component={SettingsScreen} />
+              <Stack.Screen name="Development" component={DevelopmentScreen} />
             </>
           )}
         </Stack.Navigator>

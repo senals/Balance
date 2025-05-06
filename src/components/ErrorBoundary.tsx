@@ -1,49 +1,42 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import { Text, Button } from 'react-native-paper';
-import { colors } from '../theme/colors';
+import { View, Text, StyleSheet } from 'react-native';
+import { Button } from 'react-native-paper';
 
-interface ErrorBoundaryProps {
+interface Props {
   children: React.ReactNode;
 }
 
-interface ErrorBoundaryState {
+interface State {
   hasError: boolean;
   error: Error | null;
 }
 
-export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
+export class ErrorBoundary extends React.Component<Props, State> {
+  constructor(props: Props) {
     super(props);
     this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error) {
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('Error caught in boundary:', error, errorInfo);
+    console.error('Error caught by boundary:', error, errorInfo);
   }
-
-  handleRetry = () => {
-    this.setState({ hasError: false, error: null });
-  };
 
   render() {
     if (this.state.hasError) {
       return (
         <View style={styles.container}>
           <Text style={styles.title}>Something went wrong</Text>
-          <Text style={styles.message}>
-            {this.state.error?.message || 'An unexpected error occurred'}
-          </Text>
+          <Text style={styles.errorText}>{this.state.error?.message}</Text>
           <Button
             mode="contained"
-            onPress={this.handleRetry}
+            onPress={() => this.setState({ hasError: false, error: null })}
             style={styles.button}
           >
-            Try Again
+            Try again
           </Button>
         </View>
       );
@@ -59,21 +52,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: colors.background,
   },
   title: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
-    color: colors.text,
     marginBottom: 10,
   },
-  message: {
-    fontSize: 16,
-    color: colors.text,
-    textAlign: 'center',
+  errorText: {
+    color: 'red',
     marginBottom: 20,
+    textAlign: 'center',
   },
   button: {
-    marginTop: 20,
+    marginTop: 10,
   },
 }); 

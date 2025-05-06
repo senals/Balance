@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, Card, Button, Avatar, List, Divider, useTheme } from 'react-native-paper';
 import { useNavigation } from '@react-navigation/native';
@@ -11,8 +11,16 @@ type ProfileScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>
 export const ProfileScreen = () => {
   const navigation = useNavigation<ProfileScreenNavigationProp>();
   const theme = useTheme();
-  const { userProfile: user, logout } = useApp();
+  const { userProfile: user, logout, settings, budget, readinessAssessment, setIsAuthenticated } = useApp();
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // Check if readiness assessment is completed
+    if (!readinessAssessment) {
+      // Set isAuthenticated to false to show the readiness assessment screen
+      setIsAuthenticated(false);
+    }
+  }, [readinessAssessment, setIsAuthenticated]);
 
   const handleLogout = async () => {
     setLoading(true);
@@ -41,8 +49,8 @@ export const ProfileScreen = () => {
     navigation.navigate('Settings');
   };
 
-  const handleOpenDevTools = () => {
-    navigation.navigate('DevTools');
+  const handleViewDevelopment = () => {
+    navigation.navigate('Development');
   };
 
   if (!user) {
@@ -133,6 +141,25 @@ export const ProfileScreen = () => {
         </Card.Content>
       </Card>
 
+      <Card style={styles.infoCard}>
+        <Card.Title title="Limits & Budget" />
+        <Card.Content>
+          <List.Item
+            title="Daily Drink Limit"
+            description={`${settings.dailyLimit} drinks per day`}
+            left={props => <List.Icon {...props} icon="glass-cocktail" />}
+            onPress={handleViewSettings}
+          />
+          <Divider />
+          <List.Item
+            title="Budget Limits"
+            description={`Daily: $${budget.dailyBudget} | Weekly: $${budget.weeklyBudget} | Monthly: $${budget.monthlyBudget}`}
+            left={props => <List.Icon {...props} icon="wallet" />}
+            onPress={handleViewSettings}
+          />
+        </Card.Content>
+      </Card>
+
       <Card style={styles.settingsCard}>
         <Card.Title title="Settings" />
         <Card.Content>
@@ -151,10 +178,10 @@ export const ProfileScreen = () => {
           />
           <Divider />
           <List.Item
-            title="Development Tools"
-            description="Access development and debugging tools"
-            left={props => <List.Icon {...props} icon="tools" />}
-            onPress={handleOpenDevTools}
+            title="Development"
+            description="View debug information and manage data"
+            left={props => <List.Icon {...props} icon="bug" />}
+            onPress={handleViewDevelopment}
           />
         </Card.Content>
       </Card>
@@ -175,9 +202,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
+    backgroundColor: '#fff7e9',
   },
   profileCard: {
     marginBottom: 16,
+    backgroundColor: '#fff0d4',
   },
   profileContent: {
     flexDirection: 'row',
@@ -198,9 +227,11 @@ const styles = StyleSheet.create({
   },
   infoCard: {
     marginBottom: 16,
+    backgroundColor: '#fff0d4',
   },
   settingsCard: {
     marginBottom: 16,
+    backgroundColor: '#fff0d4',
   },
   logoutButton: {
     marginBottom: 32,

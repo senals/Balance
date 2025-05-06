@@ -277,7 +277,7 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#fff7e9',
   },
   header: {
     flexDirection: 'row',
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
   },
   input: {
     marginBottom: 16,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
   },
   saveButton: {
     marginTop: 8,

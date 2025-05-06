@@ -509,6 +509,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 20,
+    backgroundColor: '#fff7e9',
   },
   header: {
     marginBottom: 20,
@@ -545,5 +546,8 @@ const styles = StyleSheet.create({
   button: {
     flex: 1,
     marginHorizontal: 5,
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
   },
 }); 

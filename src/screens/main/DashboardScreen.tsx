@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, Image, ActivityIndicator, RefreshControl, TouchableOpacity } from 'react-native';
-import { Text, Card, Button, ProgressBar } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, Image, ActivityIndicator, RefreshControl, TouchableOpacity, Animated } from 'react-native';
+import { Text, Card, Button, ProgressBar, Surface, useTheme } from 'react-native-paper';
 import { colors } from '../../theme/colors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../context/AppContext';
 import { format } from 'date-fns';
+import { LinearGradient } from 'expo-linear-gradient';
 
 // Import plant growth images
 const PlantGrowth1 = require('../../assets/images/Plantgrowth1.png');
@@ -12,6 +13,8 @@ const PlantGrowth2 = require('../../assets/images/Plantgrowth2.png');
 const PlantGrowth3 = require('../../assets/images/Plantgrowth3.png');
 const PlantGrowth4 = require('../../assets/images/Plantgrowth4.png');
 const PlantGrowth5 = require('../../assets/images/Plantgrowth5.png');
+
+type AchievementIcon = 'trophy' | 'cash' | 'calendar-check';
 
 interface DashboardScreenProps {
   navigation: any;
@@ -54,6 +57,16 @@ interface UserAccount {
   email: string;
 }
 
+interface Achievement {
+  id: string;
+  title: string;
+  description: string;
+  icon: AchievementIcon;
+  progress: number;
+  total: number;
+  unlocked: boolean;
+}
+
 // Helper function for generating unique keys
 const generateUniqueKey = (item: any, type: string, index: number): string => {
   if (item?.id) return `item-${item.id}`;
@@ -72,6 +85,9 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
   const [apiAvailable, setApiAvailable] = useState(false);
   const [showDevTools, setShowDevTools] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const theme = useTheme();
+  const progressAnim = new Animated.Value(0);
 
   // Helper function to get current time in local timezone
   const getCurrentTime = () => {
@@ -253,6 +269,9 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
           plantGrowthStage: getPlantGrowthImage()
         });
 
+        // Initialize achievements
+        initializeAchievements();
+
         setLoading(false);
         addDebugLog('Dashboard initialized successfully');
       } catch (error: unknown) {
@@ -314,7 +333,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
   // Calculate daily consumption
   const today = new Date().toISOString().split('T')[0];
   const dailyDrinks = drinks.filter(drink => 
-    drink.timestamp.startsWith(today)
+    new Date(drink.timestamp).toISOString().split('T')[0] === today
   );
   const dailyConsumption = dailyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
   const dailyLimit = (settings as UserSettings)?.dailyLimit || 3;
@@ -448,6 +467,50 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
     return PlantGrowth5;
   };
 
+  // Initialize achievements
+  const initializeAchievements = () => {
+    const userSettings = settings as UserSettings;
+    const newAchievements: Achievement[] = [
+      {
+        id: 'streak-7',
+        title: '7-Day Streak',
+        description: 'Stay within your daily limit for 7 consecutive days',
+        icon: 'trophy',
+        progress: Math.min(dailyDrinks.length, 7),
+        total: 7,
+        unlocked: dailyDrinks.length >= 7
+      },
+      {
+        id: 'budget-master',
+        title: 'Budget Master',
+        description: 'Stay within your weekly budget for 4 weeks',
+        icon: 'cash',
+        progress: Math.min(weeksCompleted, 4),
+        total: 4,
+        unlocked: weeksCompleted >= 4
+      },
+      {
+        id: 'social-planner',
+        title: 'Social Planner',
+        description: 'Create and follow 5 pre-game plans',
+        icon: 'calendar-check',
+        progress: Math.min(userSettings?.preGamePlans?.length || 0, 5),
+        total: 5,
+        unlocked: (userSettings?.preGamePlans?.length || 0) >= 5
+      }
+    ];
+    setAchievements(newAchievements);
+  };
+
+  // Animate progress bars
+  useEffect(() => {
+    Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: 1000,
+      useNativeDriver: false
+    }).start();
+  }, [dailyProgressPercentage, weeklyBudgetPercentage, monthlyBudgetPercentage]);
+
   const handleViewDrinkTracker = () => {
     navigation.navigate('DrinkTracker');
   };
@@ -557,398 +620,408 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
     );
   };
 
-  return (
-    <ScrollView 
-      style={styles.container}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={onRefresh}
-          colors={[colors.primary]}
-          tintColor={colors.primary}
-        />
-      }
-    >
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading dashboard...</Text>
+  const renderAchievements = () => (
+    <Card style={[styles.achievementsCard, { backgroundColor: '#fff0d4' }]}>
+      <Card.Content>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Achievements</Text>
+          <Button 
+            mode="text" 
+            onPress={() => navigation.navigate('Achievements')}
+            textColor={colors.primary}
+          >
+            View All
+          </Button>
         </View>
-      ) : (
-        <>
-          <View style={styles.debugContainer}>
-            <TouchableOpacity 
-              style={styles.debugHeader}
-              onPress={() => setShowDevTools(!showDevTools)}
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.achievementsScroll}
+        >
+          {achievements.map((achievement) => (
+            <Surface 
+              key={achievement.id} 
+              style={[
+                styles.achievementItem,
+                { 
+                  opacity: achievement.unlocked ? 1 : 0.5,
+                  backgroundColor: '#fff0d4'
+                }
+              ]}
+              elevation={2}
             >
-              <View style={styles.debugHeaderContent}>
-                <MaterialCommunityIcons 
-                  name={showDevTools ? "chevron-up" : "chevron-down"} 
-                  size={24} 
-                  color={colors.text} 
+              <MaterialCommunityIcons
+                name={achievement.icon}
+                size={48}
+                color={achievement.unlocked ? colors.primary : colors.text}
+                style={styles.achievementIcon}
+              />
+              <View style={styles.achievementInfo}>
+                <Text style={styles.achievementTitle}>{achievement.title}</Text>
+                <Text style={styles.achievementDescription}>{achievement.description}</Text>
+                <ProgressBar 
+                  progress={achievement.progress / achievement.total}
+                  color={colors.primary}
+                  style={styles.achievementProgress}
                 />
-                <Text style={styles.debugTitle}>Debug Information</Text>
-                <View style={styles.debugStatus}>
-                  <View style={[
-                    styles.debugStatusDot, 
-                    { backgroundColor: apiAvailable ? colors.success : colors.error }
-                  ]} />
-                  <Text style={styles.debugStatusText}>
-                    {apiAvailable ? 'API Connected' : 'API Disconnected'}
-                  </Text>
-                </View>
+                <Text style={styles.achievementProgressText}>
+                  {achievement.progress}/{achievement.total}
+                </Text>
               </View>
-            </TouchableOpacity>
-            
-            {showDevTools && (
-              <View style={styles.debugContent}>
-                <View style={styles.debugSection}>
-                  <Text style={styles.debugSubtitle}>Current State</Text>
-                  <View style={styles.debugGrid}>
-                    <View style={styles.debugGridItem}>
-                      <Text style={styles.debugLabel}>User ID</Text>
-                      <Text style={styles.debugValue}>{currentUser?.id || 'Not available'}</Text>
-                    </View>
-                    <View style={styles.debugGridItem}>
-                      <Text style={styles.debugLabel}>Drinks Count</Text>
-                      <Text style={styles.debugValue}>{drinks.length}</Text>
-                    </View>
-                    <View style={styles.debugGridItem}>
-                      <Text style={styles.debugLabel}>Loading</Text>
-                      <Text style={styles.debugValue}>{loading ? 'Yes' : 'No'}</Text>
-                    </View>
-                    <View style={styles.debugGridItem}>
-                      <Text style={styles.debugLabel}>Refreshing</Text>
-                      <Text style={styles.debugValue}>{refreshing ? 'Yes' : 'No'}</Text>
-                    </View>
-                  </View>
-                </View>
+            </Surface>
+          ))}
+        </ScrollView>
+      </Card.Content>
+    </Card>
+  );
 
-                <View style={styles.debugSection}>
-                  <Text style={styles.debugSubtitle}>Recent Logs</Text>
-                  <ScrollView style={styles.debugLogs} nestedScrollEnabled>
-                    {debugInfo.map((log, index) => (
-                      <Text key={`debug-${index}-${Date.now()}`} style={styles.debugLog}>
-                        {log}
-                      </Text>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-            )}
+  return (
+    <LinearGradient
+      colors={['#fff7e9', '#fff7e9']}
+      style={styles.container}
+    >
+      <ScrollView 
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Loading dashboard...</Text>
           </View>
-
-          <View style={styles.header}>
-            <Text style={styles.title}>Dashboard</Text>
-            <Text style={styles.subtitle}>Welcome back, {(currentUser as UserAccount)?.name || 'User'}</Text>
-          </View>
-          
-          <View style={styles.content}>
-            {/* Stage-specific content */}
-            {getStageContent()}
-
-            {/* Long-term Progress Plant */}
-            <Card style={styles.treeCard}>
-              <Card.Content style={styles.treeContent}>
-                <View style={styles.treeContainer}>
-                  <Image 
-                    source={getPlantGrowthImage()} 
-                    style={styles.plantImage}
-                    resizeMode="contain"
-                  />
-                  <View style={styles.groundContainer}>
-                    <View 
-                      style={[
-                        styles.groundFill, 
-                        { width: `${successRate * 100}%` }
-                      ]} 
-                    />
-                  </View>
-                </View>
-                <View style={styles.progressInfo}>
-                  <Text style={styles.progressAmount}>{weeksCompleted}/{totalWeeks}</Text>
-                  <Text style={styles.progressLabel}>Weeks Completed</Text>
-                  <ProgressBar 
-                    progress={weeksCompleted / totalWeeks} 
-                    color={colors.primary} 
-                    style={styles.progressBar} 
-                  />
-                  <Text style={styles.successRate}>Success Rate: {Math.round(successRate * 100)}%</Text>
-                  <Text style={styles.remainingAmount}>{totalWeeks - weeksCompleted} weeks remaining</Text>
-                </View>
-              </Card.Content>
-            </Card>
+        ) : (
+          <>
+            <View style={styles.header}>
+              <Text style={styles.title}>Dashboard</Text>
+              <Text style={styles.subtitle}>Welcome back, {(currentUser as UserAccount)?.name || 'User'}</Text>
+            </View>
             
-            {/* Daily Overview */}
-            <Card style={styles.overviewCard}>
-              <Card.Content>
-                <Text style={styles.sectionTitle}>Today's Overview</Text>
-                <View style={styles.overviewContent}>
-                  <View style={styles.overviewItem}>
-                    <Text style={styles.overviewLabel}>Drinks</Text>
-                    <Text style={styles.overviewValue}>{dailyConsumption}/{dailyLimit}</Text>
-                    <ProgressBar 
-                      progress={dailyProgressPercentage} 
-                      color={dailyProgressPercentage > 0.8 ? colors.error : colors.primary} 
-                      style={styles.progressBar} 
+            <View style={styles.content}>
+              {/* Stage-specific content */}
+              {getStageContent()}
+
+              {/* Achievements */}
+              {renderAchievements()}
+
+              {/* Long-term Progress Plant */}
+              <Card style={[styles.treeCard, { backgroundColor: '#fff0d4' }]}>
+                <Card.Content style={styles.treeContent}>
+                  <View style={styles.treeContainer}>
+                    <Image 
+                      source={getPlantGrowthImage()} 
+                      style={styles.plantImage}
+                      resizeMode="contain"
                     />
-                  </View>
-                  <View style={styles.overviewItem}>
-                    <Text style={styles.overviewLabel}>Spending</Text>
-                    <Text style={styles.overviewValue}>${dailySpent.toFixed(2)}/${dailyBudget.toFixed(2)}</Text>
-                    <ProgressBar 
-                      progress={dailyBudgetPercentage} 
-                      color={dailyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
-                      style={styles.progressBar} 
-                    />
-                  </View>
-                </View>
-              </Card.Content>
-            </Card>
-            
-            {/* Weekly and Monthly Summary */}
-            <View style={styles.summaryRow}>
-              <Card style={styles.summaryCard}>
-                <Card.Content>
-                  <Text style={styles.sectionTitle}>Weekly</Text>
-                  <View style={styles.summaryContent}>
-                    <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Drinks</Text>
-                      <Text style={styles.summaryValue}>{weeklyConsumption}</Text>
+                    <View style={[styles.groundContainer, { backgroundColor: '#fff0d4' }]}>
+                      <Animated.View 
+                        style={[
+                          styles.groundFill, 
+                          { 
+                            backgroundColor: colors.primary,
+                            width: progressAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: ['0%', `${successRate * 100}%`]
+                            })
+                          }
+                        ]} 
+                      />
                     </View>
-                    <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Spending</Text>
-                      <Text style={styles.summaryValue}>£{weeklySpent.toFixed(2)}</Text>
-                    </View>
-                    <ProgressBar 
-                      progress={weeklyBudgetPercentage} 
-                      color={weeklyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
-                      style={styles.progressBar} 
-                    />
+                  </View>
+                  <View style={styles.progressInfo}>
+                    <Text style={styles.progressAmount}>{weeksCompleted}/{totalWeeks}</Text>
+                    <Text style={styles.progressLabel}>Weeks Completed</Text>
+                    <Animated.View style={styles.progressBarContainer}>
+                      <ProgressBar 
+                        progress={weeksCompleted / totalWeeks}
+                        color={colors.primary} 
+                        style={styles.progressBar} 
+                      />
+                    </Animated.View>
+                    <Text style={styles.successRate}>Success Rate: {Math.round(successRate * 100)}%</Text>
+                    <Text style={styles.remainingAmount}>{totalWeeks - weeksCompleted} weeks remaining</Text>
                   </View>
                 </Card.Content>
               </Card>
               
-              <Card style={styles.summaryCard}>
+              {/* Daily Overview */}
+              <Card style={[styles.overviewCard, { backgroundColor: '#fff0d4' }]}>
                 <Card.Content>
-                  <Text style={styles.sectionTitle}>Monthly</Text>
-                  <View style={styles.summaryContent}>
-                    <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Drinks</Text>
-                      <Text style={styles.summaryValue}>{monthlyConsumption}</Text>
+                  <Text style={styles.sectionTitle}>Today's Overview</Text>
+                  <View style={styles.overviewContent}>
+                    <View style={styles.overviewItem}>
+                      <Text style={styles.overviewLabel}>Drinks</Text>
+                      <Text style={styles.overviewValue}>{dailyConsumption}/{dailyLimit}</Text>
+                      <ProgressBar 
+                        progress={dailyProgressPercentage} 
+                        color={dailyProgressPercentage > 0.8 ? colors.error : colors.primary} 
+                        style={styles.progressBar} 
+                      />
                     </View>
-                    <View style={styles.summaryItem}>
-                      <Text style={styles.summaryLabel}>Spending</Text>
-                      <Text style={styles.summaryValue}>£{monthlySpent.toFixed(2)}</Text>
+                    <View style={styles.overviewItem}>
+                      <Text style={styles.overviewLabel}>Spending</Text>
+                      <Text style={styles.overviewValue}>${dailySpent.toFixed(2)}/${dailyBudget.toFixed(2)}</Text>
+                      <ProgressBar 
+                        progress={dailyBudgetPercentage} 
+                        color={dailyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
+                        style={styles.progressBar} 
+                      />
                     </View>
-                    <ProgressBar 
-                      progress={monthlyBudgetPercentage} 
-                      color={monthlyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
-                      style={styles.progressBar} 
-                    />
                   </View>
                 </Card.Content>
               </Card>
-            </View>
-            
-            {/* Pre-Game Plans */}
-            <Card style={styles.preGameCard}>
-              <Card.Content>
-                <View style={styles.sectionHeader}>
-                  <Text style={styles.sectionTitle}>Upcoming Plans</Text>
-                  <Button 
-                    mode="text" 
-                    onPress={handleViewPreGamePlanner}
-                    textColor={colors.primary}
-                  >
-                    View All
-                  </Button>
-                </View>
-                {upcomingPlans.length > 0 ? (
-                  upcomingPlans.map((plan: ProcessedPreGamePlan) => (
-                    <View key={plan.id} style={styles.planItem}>
-                      <MaterialCommunityIcons
-                        name="calendar-clock"
-                        size={24}
-                        color={colors.primary}
-                      />
-                      <View style={styles.planInfo}>
-                        <Text style={styles.planDateTime}>
-                          {plan.date} at {plan.time}
-                        </Text>
-                        <Text style={styles.planLocation}>{plan.location}</Text>
-                        <Text style={styles.planNotes}>{plan.notes}</Text>
+              
+              {/* Weekly and Monthly Summary */}
+              <View style={styles.summaryRow}>
+                <Card style={[styles.summaryCard, { backgroundColor: '#fff0d4' }]}>
+                  <Card.Content>
+                    <Text style={styles.sectionTitle}>Weekly</Text>
+                    <View style={styles.summaryContent}>
+                      <View style={styles.summaryItem}>
+                        <Text style={styles.summaryLabel}>Drinks</Text>
+                        <Text style={styles.summaryValue}>{weeklyConsumption}</Text>
                       </View>
+                      <View style={styles.summaryItem}>
+                        <Text style={styles.summaryLabel}>Spending</Text>
+                        <Text style={styles.summaryValue}>£{weeklySpent.toFixed(2)}</Text>
+                      </View>
+                      <ProgressBar 
+                        progress={weeklyBudgetPercentage} 
+                        color={weeklyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
+                        style={styles.progressBar} 
+                      />
                     </View>
-                  ))
-                ) : (
-                  <View style={styles.emptyPreGameContainer}>
-                    <Text style={styles.emptyMessage}>No upcoming plans</Text>
+                  </Card.Content>
+                </Card>
+                
+                <Card style={[styles.summaryCard, { backgroundColor: '#fff0d4' }]}>
+                  <Card.Content>
+                    <Text style={styles.sectionTitle}>Monthly</Text>
+                    <View style={styles.summaryContent}>
+                      <View style={styles.summaryItem}>
+                        <Text style={styles.summaryLabel}>Drinks</Text>
+                        <Text style={styles.summaryValue}>{monthlyConsumption}</Text>
+                      </View>
+                      <View style={styles.summaryItem}>
+                        <Text style={styles.summaryLabel}>Spending</Text>
+                        <Text style={styles.summaryValue}>£{monthlySpent.toFixed(2)}</Text>
+                      </View>
+                      <ProgressBar 
+                        progress={monthlyBudgetPercentage} 
+                        color={monthlyBudgetPercentage > 0.8 ? colors.error : colors.primary} 
+                        style={styles.progressBar} 
+                      />
+                    </View>
+                  </Card.Content>
+                </Card>
+              </View>
+              
+              {/* Pre-Game Plans */}
+              <Card style={[styles.preGameCard, { backgroundColor: '#fff0d4' }]}>
+                <Card.Content>
+                  <View style={styles.sectionHeader}>
+                    <Text style={styles.sectionTitle}>Upcoming Plans</Text>
                     <Button 
-                      mode="contained" 
+                      mode="text" 
                       onPress={handleViewPreGamePlanner}
-                      style={styles.createPlanButton}
+                      textColor={colors.primary}
                     >
-                      Create a Plan
+                      View All
                     </Button>
                   </View>
-                )}
-              </Card.Content>
-            </Card>
-            
-            {/* Recent Activity */}
-            <Card style={styles.recentCard}>
-              <Card.Content>
-                <Text style={styles.sectionTitle}>Recent Activity</Text>
-                {recentDrinks.length > 0 ? (
-                  recentDrinks.map((drink) => (
-                    <View key={drink.id} style={styles.activityItem}>
-                      <MaterialCommunityIcons
-                        name="glass-cocktail" 
-                        size={24} 
-                        color={colors.primary} 
-                      />
-                      <View style={styles.activityInfo}>
-                        <Text style={styles.activityText}>{drink.drink}</Text>
-                        <Text style={styles.activityDateTime}>
-                          {drink.date} {drink.time}
-                        </Text>
+                  {upcomingPlans.length > 0 ? (
+                    upcomingPlans.map((plan: ProcessedPreGamePlan) => (
+                      <View key={plan.id} style={styles.planItem}>
+                        <MaterialCommunityIcons
+                          name="calendar-clock"
+                          size={24}
+                          color={colors.primary}
+                        />
+                        <View style={styles.planInfo}>
+                          <Text style={styles.planDateTime}>
+                            {plan.date} at {plan.time}
+                          </Text>
+                          <Text style={styles.planLocation}>{plan.location}</Text>
+                          <Text style={styles.planNotes}>{plan.notes}</Text>
+                        </View>
                       </View>
+                    ))
+                  ) : (
+                    <View style={styles.emptyPreGameContainer}>
+                      <Text style={styles.emptyMessage}>No upcoming plans</Text>
+                      <Button 
+                        mode="contained" 
+                        onPress={handleViewPreGamePlanner}
+                        style={styles.createPlanButton}
+                      >
+                        Create a Plan
+                      </Button>
                     </View>
-                  ))
-                ) : (
-                  <Text style={styles.emptyMessage}>No recent activity</Text>
-                )}
-              </Card.Content>
-            </Card>
-            
-            {/* Quick Actions */}
-            <View style={styles.actionsRow}>
-              <Button 
-                mode="contained" 
-                onPress={handleViewDrinkTracker}
-                style={styles.actionButton}
-                icon="glass-cocktail"
-              >
-                Drink Tracker
-              </Button>
-              <Button 
-                mode="contained" 
-                onPress={handleViewBudgetTracker}
-                style={styles.actionButton}
-                icon="cash"
-              >
-                Budget Tracker
-              </Button>
+                  )}
+                </Card.Content>
+              </Card>
+              
+              {/* Recent Activity */}
+              <Card style={[styles.recentCard, { backgroundColor: '#fff0d4' }]}>
+                <Card.Content>
+                  <Text style={styles.sectionTitle}>Recent Activity</Text>
+                  {recentDrinks.length > 0 ? (
+                    recentDrinks.map((drink) => (
+                      <View key={drink.id} style={styles.activityItem}>
+                        <MaterialCommunityIcons
+                          name="glass-cocktail" 
+                          size={24} 
+                          color={colors.primary} 
+                        />
+                        <View style={styles.activityInfo}>
+                          <Text style={styles.activityText}>{drink.drink}</Text>
+                          <Text style={styles.activityDateTime}>
+                            {drink.date} {drink.time}
+                          </Text>
+                        </View>
+                      </View>
+                    ))
+                  ) : (
+                    <Text style={styles.emptyMessage}>No recent activity</Text>
+                  )}
+                </Card.Content>
+              </Card>
+              
+              {/* Quick Actions */}
+              <View style={styles.actionsRow}>
+                <Button 
+                  mode="contained" 
+                  onPress={handleViewDrinkTracker}
+                  style={styles.actionButton}
+                  icon="glass-cocktail"
+                >
+                  Drink Tracker
+                </Button>
+                <Button 
+                  mode="contained" 
+                  onPress={handleViewBudgetTracker}
+                  style={styles.actionButton}
+                  icon="cash"
+                >
+                  Budget Tracker
+                </Button>
+              </View>
             </View>
-          </View>
-        </>
-      )}
-    </ScrollView>
+          </>
+        )}
+      </ScrollView>
+    </LinearGradient>
   );
 };
 
-// Helper function to calculate success rate based on budget adherence
-const calculateSuccessRate = (drinks: any[], budget: any) => {
-  // If no drinks yet, return 0 for a new user
-  if (!drinks || drinks.length === 0) {
-    return 0;
-  }
-
-  // Get the user's start date (first drink)
-  const startDate = new Date(Math.min(...drinks.map(d => new Date(d.timestamp).getTime())));
-  const currentDate = new Date();
+// Helper function to calculate success rate
+const calculateSuccessRate = (drinks: any[], settings: UserSettings) => {
+  if (!drinks || drinks.length === 0) return 0;
   
-  // Group drinks by week from start date to current date
-  const drinksByWeek: { [key: string]: any[] } = {};
+  const now = new Date();
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - now.getDay());
   
-  drinks.forEach(drink => {
-    const date = new Date(drink.timestamp);
-    const weekNumber = getWeekNumber(date);
-    const weekKey = `${date.getFullYear()}-${weekNumber}`;
-    
-    if (!drinksByWeek[weekKey]) {
-      drinksByWeek[weekKey] = [];
-    }
-    
-    drinksByWeek[weekKey].push(drink);
+  const weeklyDrinks = drinks.filter(drink => {
+    const drinkDate = new Date(drink.timestamp);
+    return drinkDate >= weekStart;
   });
   
-  // Calculate success for each week in the current 4-week period
-  let successfulWeeks = 0;
-  let weeksInPeriod = 0;
+  const weeklySpent = weeklyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
+  const weeklyBudget = settings?.weeklyBudget || 100;
   
-  // Get the start of the current 4-week period
-  const currentWeekStart = new Date(currentDate);
-  currentWeekStart.setDate(currentDate.getDate() - (currentDate.getDay() + 6) % 7); // Start of current week
-  currentWeekStart.setDate(currentWeekStart.getDate() - (3 * 7)); // Go back 3 weeks to get start of 4-week period
-  
-  // Iterate through weeks in the current 4-week period
-  let currentWeek = new Date(currentWeekStart);
-  while (currentWeek <= currentDate) {
-    const weekNumber = getWeekNumber(currentWeek);
-    const weekKey = `${currentWeek.getFullYear()}-${weekNumber}`;
-    const weekDrinks = drinksByWeek[weekKey] || [];
-    const weekSpent = weekDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
-    
-    // Consider a week successful if spending is within budget
-    if (weekSpent <= budget.weeklyBudget) {
-      successfulWeeks++;
-    }
-    
-    weeksInPeriod++;
-    currentWeek.setDate(currentWeek.getDate() + 7); // Move to next week
-  }
-  
-  // If no weeks have passed yet, return 0
-  if (weeksInPeriod === 0) {
-    return 0;
-  }
-  
-  return successfulWeeks / weeksInPeriod;
-};
-
-// Helper function to get week number
-const getWeekNumber = (date: Date): number => {
-  const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
-  const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
-  return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+  return Math.min(weeklySpent / weeklyBudget, 1);
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+  },
+  scrollView: {
+    flex: 1,
   },
   header: {
-    padding: 12,
+    padding: 20,
     paddingTop: 40,
   },
   title: {
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: 'bold',
     color: colors.primary,
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 16,
     color: colors.text,
     opacity: 0.7,
   },
   content: {
     flex: 1,
-    padding: 12,
+    padding: 16,
     paddingBottom: 24,
   },
-  treeCard: {
-    marginBottom: 12,
-    backgroundColor: colors.surface,
+  achievementsCard: {
+    marginBottom: 16,
+    borderRadius: 16,
+    elevation: 4,
+  },
+  achievementsScroll: {
+    marginTop: 8,
+  },
+  achievementItem: {
+    width: 280,
+    marginRight: 12,
+    padding: 16,
     borderRadius: 12,
-    elevation: 2,
+  },
+  achievementIcon: {
+    width: 48,
+    height: 48,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  achievementInfo: {
+    flex: 1,
+  },
+  achievementTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 4,
+  },
+  achievementDescription: {
+    fontSize: 12,
+    color: colors.text,
+    opacity: 0.7,
+    marginBottom: 8,
+  },
+  achievementProgress: {
+    height: 4,
+    borderRadius: 2,
+    marginBottom: 4,
+  },
+  achievementProgressText: {
+    fontSize: 12,
+    color: colors.text,
+    opacity: 0.7,
+    textAlign: 'right',
+  },
+  treeCard: {
+    marginBottom: 16,
+    borderRadius: 16,
+    elevation: 4,
   },
   treeContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    padding: 16,
   },
   treeContainer: {
     position: 'relative',
@@ -966,48 +1039,48 @@ const styles = StyleSheet.create({
     bottom: 0,
     width: 120,
     height: 10,
-    backgroundColor: colors.background,
     borderRadius: 5,
     overflow: 'hidden',
   },
   groundFill: {
     height: '100%',
-    backgroundColor: colors.primary,
   },
   progressInfo: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 16,
   },
   progressAmount: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
     color: colors.text,
   },
   progressLabel: {
-    fontSize: 12,
+    fontSize: 14,
     color: colors.text,
     opacity: 0.7,
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  successRate: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.primary,
-    marginTop: 4,
+  progressBarContainer: {
+    marginBottom: 8,
   },
   progressBar: {
     height: 6,
     borderRadius: 3,
-    marginBottom: 6,
+  },
+  successRate: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.primary,
+    marginBottom: 4,
   },
   remainingAmount: {
-    fontSize: 12,
+    fontSize: 14,
     color: colors.text,
     opacity: 0.7,
   },
   overviewCard: {
     marginBottom: 12,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
     elevation: 2,
   },
@@ -1043,7 +1116,7 @@ const styles = StyleSheet.create({
   summaryCard: {
     flex: 1,
     marginHorizontal: 6,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
     elevation: 2,
   },
@@ -1065,7 +1138,7 @@ const styles = StyleSheet.create({
   },
   recentCard: {
     marginBottom: 12,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
     elevation: 2,
   },
@@ -1106,7 +1179,7 @@ const styles = StyleSheet.create({
   },
   preGameCard: {
     marginBottom: 16,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
     elevation: 2,
   },
@@ -1149,7 +1222,7 @@ const styles = StyleSheet.create({
   },
   stageCard: {
     marginBottom: 12,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
     elevation: 2,
   },
@@ -1184,16 +1257,14 @@ const styles = StyleSheet.create({
   },
   debugContainer: {
     margin: 16,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
-    elevation: 2,
-    overflow: 'hidden',
   },
   debugHeader: {
     padding: 12,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderBottomWidth: 1,
-    borderBottomColor: colors.background,
+    borderBottomColor: '#fff7e9',
   },
   debugHeaderContent: {
     flexDirection: 'row',
@@ -1227,7 +1298,7 @@ const styles = StyleSheet.create({
   debugSection: {
     padding: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.background,
+    borderBottomColor: '#fff7e9',
   },
   debugSubtitle: {
     fontSize: 14,

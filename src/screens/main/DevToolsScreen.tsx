@@ -13,8 +13,7 @@ export const DevToolsScreen = ({ navigation }: { navigation: any }) => {
     budget, 
     userProfile,
     logout,
-    setDrinks,
-    setPreGamePlans
+    resetAllData
   } = useApp();
 
   const [metrics, setMetrics] = useState({
@@ -25,6 +24,7 @@ export const DevToolsScreen = ({ navigation }: { navigation: any }) => {
   });
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     updateMetrics();
@@ -64,19 +64,8 @@ export const DevToolsScreen = ({ navigation }: { navigation: any }) => {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Clear AsyncStorage
-              const keys = await AsyncStorage.getAllKeys();
-              await AsyncStorage.multiRemove(keys);
-              
-              // Reset app state
-              setDrinks([]);
-              setPreGamePlans([]);
-              setMetrics({
-                drinksCount: 0,
-                plansCount: 0,
-                totalStorageSize: 0,
-                lastSyncTime: new Date().toISOString(),
-              });
+              setIsResetting(true);
+              await resetAllData();
               
               setSnackbarMessage('All data reset successfully');
               setSnackbarVisible(true);
@@ -89,6 +78,8 @@ export const DevToolsScreen = ({ navigation }: { navigation: any }) => {
               console.error('Error resetting data:', error);
               setSnackbarMessage('Failed to reset data');
               setSnackbarVisible(true);
+            } finally {
+              setIsResetting(false);
             }
           }
         }
@@ -142,6 +133,8 @@ export const DevToolsScreen = ({ navigation }: { navigation: any }) => {
               style={styles.resetButton}
               icon="delete"
               textColor={colors.error}
+              loading={isResetting}
+              disabled={isResetting}
             >
               Reset All Data
             </Button>

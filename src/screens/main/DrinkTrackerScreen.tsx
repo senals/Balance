@@ -91,8 +91,19 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
       invalidFields.push('price');
     }
     
-    const timestamp = new Date(drink.timestamp);
-    if (isNaN(timestamp.getTime())) {
+    // Safe date validation
+    let timestamp: Date | null = null;
+    try {
+      if (drink.timestamp) {
+        timestamp = new Date(drink.timestamp);
+        if (isNaN(timestamp.getTime())) {
+          invalidFields.push('timestamp');
+          timestamp = null;
+        }
+      } else {
+        invalidFields.push('timestamp');
+      }
+    } catch (error) {
       invalidFields.push('timestamp');
     }
     
@@ -100,26 +111,39 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
       isValid: missingFields.length === 0 && invalidFields.length === 0,
       missingFields,
       invalidFields,
-      timestamp: timestamp.toISOString()
+      timestamp: timestamp ? timestamp.toISOString() : null
     };
   };
 
   // Analyze drinks data
   const analyzeDrinks = (drinks: any[]) => {
+    const validDrinks = drinks.filter(drink => {
+      const validation = validateDrink(drink);
+      return validation.isValid;
+    });
+
     const analysis = {
-      totalDrinks: drinks.length,
-      totalQuantity: drinks.reduce((sum, drink) => sum + drink.quantity, 0),
+      totalDrinks: validDrinks.length,
+      totalQuantity: validDrinks.reduce((sum, drink) => sum + drink.quantity, 0),
       categories: {} as Record<string, number>,
       types: {} as Record<string, number>,
       brands: {} as Record<string, number>,
       timeRange: {
-        start: new Date(Math.min(...drinks.map(d => new Date(d.timestamp).getTime()))),
-        end: new Date(Math.max(...drinks.map(d => new Date(d.timestamp).getTime())))
+        start: new Date(),
+        end: new Date()
       },
       validation: drinks.map(validateDrink)
     };
 
-    drinks.forEach(drink => {
+    if (validDrinks.length > 0) {
+      const timestamps = validDrinks.map(d => new Date(d.timestamp).getTime());
+      analysis.timeRange = {
+        start: new Date(Math.min(...timestamps)),
+        end: new Date(Math.max(...timestamps))
+      };
+    }
+
+    validDrinks.forEach(drink => {
       analysis.categories[drink.category] = (analysis.categories[drink.category] || 0) + drink.quantity;
       analysis.types[drink.type] = (analysis.types[drink.type] || 0) + drink.quantity;
       analysis.brands[drink.brand] = (analysis.brands[drink.brand] || 0) + drink.quantity;
@@ -279,40 +303,56 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
 
   // Calculate daily consumption
   const today = new Date().toISOString().split('T')[0];
-  const dailyDrinks = drinks.filter(drink => 
-    drink.timestamp.startsWith(today)
-  );
+  const dailyDrinks = drinks.filter(drink => {
+    if (!drink.timestamp) return false;
+    const drinkDate = new Date(drink.timestamp);
+    if (isNaN(drinkDate.getTime())) return false;
+    return drinkDate.toISOString().split('T')[0] === today;
+  });
   const dailyConsumption = dailyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
   const dailyLimit = settings.dailyLimit;
 
   // Calculate weekly consumption
   const weekStart = new Date();
+  weekStart.setHours(0, 0, 0, 0);
   weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-  const weeklyDrinks = drinks.filter(drink => 
-    new Date(drink.timestamp) >= weekStart
-  );
+  const weeklyDrinks = drinks.filter(drink => {
+    if (!drink.timestamp) return false;
+    const drinkDate = new Date(drink.timestamp);
+    return !isNaN(drinkDate.getTime()) && drinkDate >= weekStart;
+  });
   const weeklyConsumption = weeklyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
 
   // Calculate monthly consumption
   const monthStart = new Date();
+  monthStart.setHours(0, 0, 0, 0);
   monthStart.setDate(1);
-  const monthlyDrinks = drinks.filter(drink => 
-    new Date(drink.timestamp) >= monthStart
-  );
+  const monthlyDrinks = drinks.filter(drink => {
+    if (!drink.timestamp) return false;
+    const drinkDate = new Date(drink.timestamp);
+    return !isNaN(drinkDate.getTime()) && drinkDate >= monthStart;
+  });
   const monthlyConsumption = monthlyDrinks.reduce((sum, drink) => sum + drink.quantity, 0);
 
   // Get recent drinks with proper key generation
   const recentDrinks = React.useMemo(() => {
     const validDrinks = drinks
-      .filter(drink => drink && (drink.id || drink.timestamp))
+      .filter(drink => {
+        if (!drink || !drink.timestamp) return false;
+        const drinkDate = new Date(drink.timestamp);
+        return !isNaN(drinkDate.getTime());
+      })
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
       .slice(0, 3)
-      .map((drink, index) => ({
-        id: generateUniqueKey(drink, 'drink', index),
-        drink: `${drink.brand} (${drink.quantity}x)`,
-        date: new Date(drink.timestamp).toLocaleDateString(),
-        time: new Date(drink.timestamp).toLocaleTimeString(),
-      }));
+      .map((drink, index) => {
+        const drinkDate = new Date(drink.timestamp);
+        return {
+          id: generateUniqueKey(drink, 'drink', index),
+          drink: `${drink.brand} (${drink.quantity}x)`,
+          date: drinkDate.toLocaleDateString(),
+          time: drinkDate.toLocaleTimeString(),
+        };
+      });
     
     return validDrinks;
   }, [drinks]);
@@ -572,13 +612,13 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#fff7e9',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    backgroundColor: '#fff7e9',
   },
   header: {
     flexDirection: 'row',
@@ -597,7 +637,7 @@ const styles = StyleSheet.create({
   },
   progressCard: {
     marginBottom: 16,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
     elevation: 2,
   },
@@ -625,6 +665,7 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     marginHorizontal: 4,
+    backgroundColor: '#fff0d4',
   },
   statTitle: {
     fontSize: 16,
@@ -650,6 +691,7 @@ const styles = StyleSheet.create({
   chartCard: {
     marginBottom: 16,
     marginHorizontal: 16,
+    backgroundColor: '#fff0d4',
   },
   chartTitle: {
     fontSize: 16,
@@ -664,6 +706,7 @@ const styles = StyleSheet.create({
   recentDrinksCard: {
     marginBottom: 16,
     marginHorizontal: 16,
+    backgroundColor: '#fff0d4',
   },
   sectionTitle: {
     fontSize: 16,
@@ -713,7 +756,7 @@ const styles = StyleSheet.create({
   },
   debugCard: {
     margin: 16,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
   },
   debugHeader: {

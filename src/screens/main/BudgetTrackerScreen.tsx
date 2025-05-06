@@ -184,14 +184,16 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
   const today = new Date().toISOString().split('T')[0];
   
   // Get expenses from both drinks and budget.expenses
-  const dailyDrinks = drinks.filter(drink => 
-    drink.timestamp.startsWith(today)
-  );
+  const dailyDrinks = drinks.filter(drink => {
+    const drinkDate = new Date(drink.timestamp).toISOString().split('T')[0];
+    return drinkDate === today;
+  });
   const dailyDrinksSpent = dailyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
   
-  const dailyExpenses = budget?.expenses?.filter(expense => 
-    expense.date.startsWith(today)
-  ) || [];
+  const dailyExpenses = budget?.expenses?.filter(expense => {
+    const expenseDate = new Date(expense.date).toISOString().split('T')[0];
+    return expenseDate === today;
+  }) || [];
   const dailyExpensesSpent = dailyExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0);
   
   const dailySpent = dailyDrinksSpent + dailyExpensesSpent;
@@ -427,13 +429,13 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#fff7e9',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.background,
+    backgroundColor: '#fff7e9',
   },
   loadingText: {
     marginTop: 10,
@@ -442,7 +444,7 @@ const styles = StyleSheet.create({
   },
   apiStatusCard: {
     margin: 10,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
   },
   apiStatusContent: {
     flexDirection: 'row',
@@ -473,7 +475,7 @@ const styles = StyleSheet.create({
   },
   budgetCard: {
     marginBottom: 12,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
     elevation: 2,
   },
@@ -535,14 +537,14 @@ const styles = StyleSheet.create({
   summaryCard: {
     flex: 1,
     marginRight: 6,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
     elevation: 2,
   },
   recentCard: {
     flex: 1,
     marginLeft: 6,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
     elevation: 2,
   },
@@ -608,7 +610,7 @@ const styles = StyleSheet.create({
   },
   debugCard: {
     margin: 10,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#fff0d4',
   },
   debugTitle: {
     fontSize: 14,

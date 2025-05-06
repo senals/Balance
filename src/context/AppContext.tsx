@@ -3,6 +3,9 @@ import { storage, STORAGE_KEYS, StorageError, UserAccount, UserProfile, UserSett
 import { lightTheme, darkTheme } from '../theme/theme';
 import { drinkApi } from '../services/drinkApi';
 import { dataService } from '../services/dataService';
+import { toISOString, DateLike, toDate } from '../types/date';
+import { encryptionService } from '../services/encryption';
+import { batteryOptimizationService } from '../services/batteryOptimization';
 
 export type AppContextType = {
   // Authentication state
@@ -22,6 +25,17 @@ export type AppContextType = {
   setPreGamePlans: React.Dispatch<React.SetStateAction<PreGamePlan[]>>;
   readinessAssessment: ReadinessAssessment | null;
   theme: typeof lightTheme;
+  appState: {
+    isAuthenticated: boolean;
+    isLoading: boolean;
+    error: string | null;
+    userProfile: UserProfile | null;
+    settings: UserSettings;
+    drinks: DrinkEntry[];
+    budget: BudgetData;
+    preGamePlans: PreGamePlan[];
+    readinessAssessment: ReadinessAssessment | null;
+  };
 
   // Auth actions
   login: (email: string, password: string) => Promise<void>;
@@ -29,6 +43,7 @@ export type AppContextType = {
   logout: () => Promise<void>;
   deleteAccount: () => Promise<void>;
   resetPassword: (email: string, newPassword: string) => Promise<void>;
+  resetAllData: () => Promise<void>;
   
   // Profile actions
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
@@ -52,8 +67,8 @@ export type AppContextType = {
   
   // Readiness assessment actions
   getReadinessAssessment: () => Promise<ReadinessAssessment | null>;
-  addReadinessAssessment: (assessment: Omit<ReadinessAssessment, 'id' | 'createdAt' | 'updatedAt'>) => Promise<void>;
-  updateReadinessAssessment: (updates: Partial<ReadinessAssessment>) => Promise<void>;
+  addReadinessAssessment: (assessment: Omit<ReadinessAssessment, 'id' | 'createdAt' | 'updatedAt'>) => Promise<ReadinessAssessment>;
+  updateReadinessAssessment: (updates: Partial<ReadinessAssessment>) => Promise<ReadinessAssessment>;
   
   // Error handling
   clearError: () => void;
@@ -89,6 +104,29 @@ export const AppContext = createContext<AppContextType>({
   setPreGamePlans: () => {},
   readinessAssessment: null,
   theme: lightTheme,
+  appState: {
+    isAuthenticated: false,
+    isLoading: false,
+    error: null,
+    userProfile: null,
+    settings: {
+      notificationsEnabled: true,
+      darkModeEnabled: false,
+      privacyModeEnabled: false,
+      dailyLimit: 3,
+      userId: '',
+    },
+    drinks: [],
+    budget: {
+      dailyBudget: 15,
+      weeklyBudget: 105,
+      monthlyBudget: 450,
+      expenses: [],
+      userId: '',
+    },
+    preGamePlans: [],
+    readinessAssessment: null,
+  },
 
   // Auth actions
   login: async () => {},
@@ -96,6 +134,7 @@ export const AppContext = createContext<AppContextType>({
   logout: async () => {},
   deleteAccount: async () => {},
   resetPassword: async () => {},
+  resetAllData: async () => {},
   
   // Profile actions
   updateProfile: async () => {},
@@ -145,8 +184,32 @@ export const AppContext = createContext<AppContextType>({
   
   // Readiness assessment actions
   getReadinessAssessment: async () => null,
-  addReadinessAssessment: async () => {},
-  updateReadinessAssessment: async () => {},
+  addReadinessAssessment: async () => ({
+    id: '',
+    userId: '',
+    primaryStage: 'pre-contemplation',
+    secondaryStage: null,
+    readinessScore: 0,
+    confidenceLevel: 0,
+    stageLevels: {},
+    recommendations: [],
+    answers: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }),
+  updateReadinessAssessment: async () => ({
+    id: '',
+    userId: '',
+    primaryStage: 'pre-contemplation',
+    secondaryStage: null,
+    readinessScore: 0,
+    confidenceLevel: 0,
+    stageLevels: {},
+    recommendations: [],
+    answers: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }),
   
   // Error handling
   clearError: () => {},
@@ -179,10 +242,130 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Theme state
   const theme = useMemo(() => settings.darkModeEnabled ? darkTheme : lightTheme, [settings.darkModeEnabled]);
 
+  // Initialize encryption
+  useEffect(() => {
+    const initializeEncryption = async () => {
+      try {
+        await encryptionService.initialize();
+      } catch (error) {
+        console.error('Failed to initialize encryption:', error);
+        // Handle encryption initialization failure
+        // This could be a critical error that needs user attention
+      }
+    };
+
+    initializeEncryption();
+  }, []);
+
+  // Initialize battery optimization
+  useEffect(() => {
+    const initializeBatteryOptimization = async () => {
+      try {
+        const currentUser = await storage.auth.getCurrentUser();
+        if (currentUser) {
+          await batteryOptimizationService.optimizeLocationServices(currentUser.id);
+          await batteryOptimizationService.optimizeNetworkRequests();
+        }
+      } catch (error) {
+        console.error('Failed to initialize battery optimization:', error);
+      }
+    };
+
+    initializeBatteryOptimization();
+
+    return () => {
+      batteryOptimizationService.destroy();
+    };
+  }, []);
+
   // Clear error function
   const clearError = useCallback(() => {
     setError(null);
   }, []);
+
+  // Load user data
+  const loadUserData = useCallback(async (userId: string) => {
+    try {
+      setIsLoading(true);
+      clearError();
+      
+      // Load user profile
+      const profile = await storage.profile.get(userId);
+      setUserProfile(profile);
+      
+      // Load settings
+      const userSettings = await storage.settings.get(userId);
+      
+      // Load readiness assessment
+      const assessment = await storage.readinessAssessment.get(userId);
+      
+      // Update settings with readiness assessment data if available
+      const updatedSettings = {
+        ...userSettings,
+        readinessAssessment: assessment ? {
+          primaryStage: assessment.primaryStage,
+          secondaryStage: assessment.secondaryStage,
+          readinessScore: assessment.readinessScore,
+          confidenceLevel: assessment.confidenceLevel,
+          recommendations: assessment.recommendations
+        } : undefined
+      };
+      
+      setSettings(updatedSettings);
+      setReadinessAssessment(assessment);
+      
+      // Load drinks from MongoDB
+      try {
+        const userDrinks = await drinkApi.getAll(userId);
+        // Ensure all timestamps are valid dates
+        const formattedDrinks = userDrinks.map((drink: DrinkEntry) => ({
+          ...drink,
+          timestamp: toISOString(new Date(drink.timestamp))
+        }));
+        setDrinks(formattedDrinks);
+      } catch (drinkError) {
+        console.error('Error loading drinks:', drinkError);
+        setDrinks([]);
+      }
+      
+      // Load budget
+      const userBudget = await storage.budget.get(userId);
+      setBudget(userBudget ? {
+        dailyBudget: userBudget.dailyBudget,
+        weeklyBudget: userBudget.weeklyBudget,
+        monthlyBudget: userBudget.monthlyBudget,
+        expenses: userBudget.expenses.map((expense, index) => ({
+          id: `expense-${index}`,
+          amount: expense.amount,
+          category: expense.category,
+          date: toISOString(new Date(expense.date)),
+          notes: expense.notes
+        })),
+        userId: userBudget.userId
+      } : {
+        dailyBudget: 0,
+        weeklyBudget: 0,
+        monthlyBudget: 0,
+        expenses: [],
+        userId: userId
+      });
+      
+      // Load pre-game plans
+      const plans = await storage.preGamePlans.getAll(userId);
+      setPreGamePlans(plans.map(plan => ({
+        ...plan,
+        date: toISOString(new Date(plan.date)),
+        createdAt: toISOString(new Date(plan.createdAt)),
+        updatedAt: toISOString(new Date(plan.updatedAt)),
+      })));
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load user data';
+      setError(errorMessage);
+      console.error('Error loading user data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clearError]);
 
   // Check if user is already logged in
   useEffect(() => {
@@ -203,62 +386,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     checkAuth();
   }, []);
-
-  // Load user data
-  const loadUserData = useCallback(async (userId: string) => {
-    try {
-      setIsLoading(true);
-      clearError();
-      
-      // Load user profile
-      const profile = await storage.profile.get(userId);
-      setUserProfile(profile);
-      
-      // Load settings
-      const userSettings = await storage.settings.get(userId);
-      setSettings(userSettings);
-      
-      // Load drinks from MongoDB
-      const userDrinks = await drinkApi.getAll(userId);
-      setDrinks(userDrinks);
-      
-      // Load budget
-      const userBudget = await storage.budget.get(userId);
-      setBudget(userBudget ? {
-        dailyBudget: userBudget.dailyBudget,
-        weeklyBudget: userBudget.weeklyBudget,
-        monthlyBudget: userBudget.monthlyBudget,
-        expenses: userBudget.expenses.map((expense, index) => ({
-          id: `expense-${index}`,
-          amount: expense.amount,
-          category: expense.category,
-          date: expense.date instanceof Date ? expense.date.toISOString() : expense.date,
-          notes: expense.notes
-        })),
-        userId: userBudget.userId
-      } : {
-        dailyBudget: 0,
-        weeklyBudget: 0,
-        monthlyBudget: 0,
-        expenses: [],
-        userId: userId
-      });
-      
-      // Load pre-game plans
-      const plans = await storage.preGamePlans.getAll(userId);
-      setPreGamePlans(plans);
-      
-      // Load readiness assessment
-      const assessment = await storage.readinessAssessment.get(userId);
-      setReadinessAssessment(assessment);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load user data';
-      setError(errorMessage);
-      console.error('Error loading user data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [clearError]);
 
   // Auth actions
   const login = useCallback(async (email: string, password: string) => {
@@ -539,7 +666,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
           
           try {
-            const updatedBudget = await dataService.budget.addExpense(currentUser.id, expense);
+            const updatedBudget = await dataService.budget.addExpense(currentUser.id, {
+              ...expense,
+              date: toISOString(expense.date)
+            });
             if (updatedBudget) {
               const storageBudget: BudgetData = {
                 dailyBudget: updatedBudget.dailyBudget,
@@ -547,10 +677,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 monthlyBudget: updatedBudget.monthlyBudget,
                 userId: updatedBudget.userId,
                 expenses: updatedBudget.expenses.map(exp => ({
-                  id: Date.now().toString(),
+                  id: Date.now().toString(), // Generate a new ID for each expense
                   amount: exp.amount,
                   category: exp.category,
-                  date: toISODateString(exp.date),
+                  date: toISOString(exp.date),
                   notes: exp.notes
                 }))
               };
@@ -636,7 +766,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             id: Date.now().toString(), // Generate a new ID for each expense
             amount: exp.amount,
             category: exp.category,
-            date: exp.date.toISOString(),
+            date: toISOString(exp.date),
             notes: exp.notes
           }))
         };
@@ -677,7 +807,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }));
       
       // Save to storage
-      const updatedBudget = await dataService.budget.addExpense(currentUser.id, expense);
+      const updatedBudget = await dataService.budget.addExpense(currentUser.id, {
+        ...expense,
+        date: toISOString(expense.date)
+      });
       
       // If we have a valid budget, update the state
       if (updatedBudget) {
@@ -687,10 +820,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           monthlyBudget: updatedBudget.monthlyBudget,
           userId: updatedBudget.userId,
           expenses: updatedBudget.expenses.map(exp => ({
-            id: Date.now().toString(),
+            id: Date.now().toString(), // Generate a new ID for each expense
             amount: exp.amount,
             category: exp.category,
-            date: exp.date.toISOString(),
+            date: toISOString(exp.date),
             notes: exp.notes
           }))
         };
@@ -786,29 +919,71 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addReadinessAssessment = useCallback(async (assessment: Omit<ReadinessAssessment, 'id' | 'createdAt' | 'updatedAt'>) => {
     try {
+      setIsLoading(true);
       clearError();
-      const newAssessment = await storage.readinessAssessment.add(assessment);
-      setReadinessAssessment(newAssessment);
+      
+      const savedAssessment = await storage.readinessAssessment.add(assessment);
+      setReadinessAssessment(savedAssessment);
+      
+      // Update settings with the new assessment data
+      const updatedSettings = {
+        ...settings,
+        readinessAssessment: {
+          primaryStage: savedAssessment.primaryStage,
+          secondaryStage: savedAssessment.secondaryStage,
+          readinessScore: savedAssessment.readinessScore,
+          confidenceLevel: savedAssessment.confidenceLevel,
+          recommendations: savedAssessment.recommendations
+        }
+      };
+      
+      await storage.settings.update(updatedSettings);
+      setSettings(updatedSettings);
+      
+      return savedAssessment;
     } catch (error) {
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to add readiness assessment';
       setError(errorMessage);
       console.error('Error adding readiness assessment:', error);
       throw error;
+    } finally {
+      setIsLoading(false);
     }
-  }, [clearError]);
+  }, [settings, clearError]);
 
   const updateReadinessAssessment = useCallback(async (updates: Partial<ReadinessAssessment>) => {
     try {
+      setIsLoading(true);
       clearError();
-      const updated = await storage.readinessAssessment.update(updates);
-      setReadinessAssessment(updated);
+      
+      const updatedAssessment = await storage.readinessAssessment.update(updates);
+      setReadinessAssessment(updatedAssessment);
+      
+      // Update settings with the updated assessment data
+      const updatedSettings = {
+        ...settings,
+        readinessAssessment: {
+          primaryStage: updatedAssessment.primaryStage,
+          secondaryStage: updatedAssessment.secondaryStage,
+          readinessScore: updatedAssessment.readinessScore,
+          confidenceLevel: updatedAssessment.confidenceLevel,
+          recommendations: updatedAssessment.recommendations
+        }
+      };
+      
+      await storage.settings.update(updatedSettings);
+      setSettings(updatedSettings);
+      
+      return updatedAssessment;
     } catch (error) {
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to update readiness assessment';
       setError(errorMessage);
       console.error('Error updating readiness assessment:', error);
       throw error;
+    } finally {
+      setIsLoading(false);
     }
-  }, [clearError]);
+  }, [settings, clearError]);
 
   // Auth actions
   const resetPassword = useCallback(async (email: string, newPassword: string) => {
@@ -826,8 +1001,87 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [clearError]);
 
-  // Memoize the context value to prevent unnecessary re-renders
-  const contextValue = useMemo(() => ({
+  // Reset all data function
+  const resetAllData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      clearError();
+      
+      if (!currentUser) {
+        throw new Error('No user logged in');
+      }
+      
+      // Clear all data from storage except auth token
+      await Promise.all([
+        storage.remove(storage.getUserKey(STORAGE_KEYS.USER_PROFILE, currentUser.id)),
+        storage.remove(storage.getUserKey(STORAGE_KEYS.SETTINGS, currentUser.id)),
+        storage.remove(storage.getUserKey(STORAGE_KEYS.BUDGET, currentUser.id)),
+        storage.remove(storage.getUserKey(STORAGE_KEYS.PRE_GAME_PLANS, currentUser.id)),
+        storage.remove(storage.getUserKey(STORAGE_KEYS.READINESS_ASSESSMENT, currentUser.id)),
+        storage.remove(storage.getUserKey(STORAGE_KEYS.DRINKS, currentUser.id))
+      ]);
+      
+      // Clear drinks from MongoDB - handle failures gracefully
+      try {
+        const drinks = await drinkApi.getAll(currentUser.id);
+        await Promise.allSettled(drinks.map((drink: DrinkEntry) => 
+          drinkApi.delete(drink.id).catch(error => {
+            console.warn(`Failed to delete drink ${drink.id}:`, error);
+            return null;
+          })
+        ));
+      } catch (error) {
+        console.warn('Error clearing drinks from MongoDB:', error);
+        // Continue with reset even if drink deletion fails
+      }
+      
+      // Reset all state except authentication
+      setUserProfile(null);
+      setSettings({
+        notificationsEnabled: true,
+        darkModeEnabled: false,
+        privacyModeEnabled: false,
+        dailyLimit: 3,
+        userId: currentUser.id,
+      });
+      setDrinks([]);
+      setBudget({
+        dailyBudget: 15,
+        weeklyBudget: 105,
+        monthlyBudget: 450,
+        expenses: [],
+        userId: currentUser.id,
+      });
+      setPreGamePlans([]);
+      setReadinessAssessment(null);
+      
+      // Force a reload of the user data
+      await loadUserData(currentUser.id);
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to reset data';
+      setError(errorMessage);
+      console.error('Error resetting data:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentUser, clearError, loadUserData]);
+
+  // App state object
+  const appState = useMemo(() => ({
+    isAuthenticated,
+    isLoading,
+    error,
+    userProfile,
+    settings,
+    drinks,
+    budget,
+    preGamePlans,
+    readinessAssessment,
+  }), [isAuthenticated, isLoading, error, userProfile, settings, drinks, budget, preGamePlans, readinessAssessment]);
+
+  const value = useMemo(() => ({
     // Auth state
     isAuthenticated,
     currentUser,
@@ -845,6 +1099,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPreGamePlans,
     readinessAssessment,
     theme,
+    appState,
 
     // Actions
     login,
@@ -865,6 +1120,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     getReadinessAssessment,
     addReadinessAssessment,
     updateReadinessAssessment,
+    resetAllData,
     clearError,
   }), [
     isAuthenticated,
@@ -881,6 +1137,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setPreGamePlans,
     readinessAssessment,
     theme,
+    appState,
     login,
     register,
     logout,
@@ -899,11 +1156,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     getReadinessAssessment,
     addReadinessAssessment,
     updateReadinessAssessment,
+    resetAllData,
     clearError,
   ]);
 
   return (
-    <AppContext.Provider value={contextValue}>
+    <AppContext.Provider value={value}>
       {children}
     </AppContext.Provider>
   );

@@ -2,6 +2,24 @@ import { transactionApi, budgetApi, userApi, checkApiConnection } from './api';
 import { storage, STORAGE_KEYS, StorageError } from './storage';
 import { Budget, IBudget, IBudgetDocument, IExpense } from '../models/Budget';
 
+// Add API configuration interface
+interface ApiConfig {
+  api: Api | null;
+  isBatchingEnabled: boolean;
+}
+
+interface Api {
+  sync: (changes: any[]) => Promise<void>;
+  addTransaction: (transaction: Transaction) => Promise<void>;
+}
+
+interface Transaction {
+  id: string;
+  amount: number;
+  type: string;
+  timestamp: number;
+}
+
 // Data service that combines local storage and API
 export const dataService = {
   // Check if API is available
@@ -256,6 +274,49 @@ export const dataService = {
     update: async (updates: any, userId: string) => {
       // Settings are only stored locally
       return await storage.settings.update(updates);
+    }
+  },
+
+  // Add API configuration
+  apiConfig: {
+    api: null,
+    isBatchingEnabled: false
+  } as ApiConfig,
+
+  // Add API methods
+  getApi(): Api | null {
+    return this.apiConfig.api;
+  },
+
+  configureApi(config: Partial<ApiConfig>): void {
+    this.apiConfig = { ...this.apiConfig, ...config };
+  },
+
+  // Add sync changes method
+  async syncChanges(changes: Transaction[]): Promise<void> {
+    if (!this.apiConfig.api) {
+      // Queue changes for later sync
+      return;
+    }
+
+    // Process changes in batches
+    const batchSize = 10;
+    for (let i = 0; i < changes.length; i += batchSize) {
+      const batch = changes.slice(i, i + batchSize);
+      await this.apiConfig.api.sync(batch);
+    }
+  },
+
+  // Add transaction method
+  async addTransaction(transaction: Transaction): Promise<void> {
+    if (this.apiConfig.isBatchingEnabled) {
+      storage.addPendingChange({
+        key: 'transactions',
+        value: transaction,
+        timestamp: Date.now()
+      });
+    } else if (this.apiConfig.api) {
+      await this.apiConfig.api.addTransaction(transaction);
     }
   }
 }; 

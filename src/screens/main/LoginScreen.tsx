@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
 import { TextInput, Button, Text, useTheme } from 'react-native-paper';
 import { useApp } from '../../context/AppContext';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../../navigation/types';
+import { ErrorBoundary } from '../../components/ErrorBoundary';
 
 type LoginScreenNavigationProp = NativeStackNavigationProp<RootStackParamList, 'Login'>;
 
-export const LoginScreen: React.FC = () => {
+const LoginScreenContent: React.FC = () => {
   const theme = useTheme();
   const navigation = useNavigation<LoginScreenNavigationProp>();
   const { login, isLoading, error, clearError, getReadinessAssessment } = useApp();
@@ -63,6 +64,7 @@ export const LoginScreen: React.FC = () => {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.formContainer}>
+          <Image source={require('../../assets/images/logo.png')} style={styles.logo} />
           <Text variant="headlineMedium" style={styles.title}>
             Welcome Back
           </Text>
@@ -81,6 +83,7 @@ export const LoginScreen: React.FC = () => {
             keyboardType="email-address"
             autoCapitalize="none"
             disabled={isLoading}
+            accessibilityRole="text"
           />
 
           <TextInput
@@ -90,6 +93,7 @@ export const LoginScreen: React.FC = () => {
             style={styles.input}
             secureTextEntry
             disabled={isLoading}
+            accessibilityRole="text"
           />
 
           <Button
@@ -98,6 +102,7 @@ export const LoginScreen: React.FC = () => {
             style={styles.button}
             loading={isLoading}
             disabled={isLoading}
+            accessibilityRole="button"
           >
             Login
           </Button>
@@ -107,6 +112,7 @@ export const LoginScreen: React.FC = () => {
             onPress={() => navigation.navigate('Register')}
             style={styles.switchButton}
             disabled={isLoading}
+            accessibilityRole="button"
           >
             Don't have an account? Register
           </Button>
@@ -116,9 +122,18 @@ export const LoginScreen: React.FC = () => {
   );
 };
 
+export const LoginScreen: React.FC = () => {
+  return (
+    <ErrorBoundary>
+      <LoginScreenContent />
+    </ErrorBoundary>
+  );
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#fff7e9',
   },
   scrollContent: {
     flexGrow: 1,
@@ -127,21 +142,40 @@ const styles = StyleSheet.create({
   formContainer: {
     padding: 20,
   },
+  logo: {
+    width: 160,
+    height: 160,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
   title: {
     textAlign: 'center',
     marginBottom: 24,
+    verticalAlign: 'middle',
   },
   input: {
     marginBottom: 16,
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
+    backgroundColor: '#fff0d4',
   },
   button: {
     marginTop: 8,
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   },
   switchButton: {
     marginTop: 16,
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
   },
   errorText: {
     textAlign: 'center',
     marginBottom: 16,
+    userSelect: 'none',
   },
 }); 

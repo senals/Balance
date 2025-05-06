@@ -454,7 +454,7 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: '#fff7e9',
   },
   header: {
     flexDirection: 'row',
@@ -476,7 +476,7 @@ const styles = StyleSheet.create({
   },
   planCard: {
     marginBottom: 16,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
     elevation: 2,
   },
@@ -576,7 +576,7 @@ const styles = StyleSheet.create({
   },
   input: {
     marginBottom: 16,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
   },
   snackbar: {
     backgroundColor: colors.primary,
@@ -621,5 +621,8 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     zIndex: 1,
+  },
+  dialogContent: {
+    backgroundColor: '#fff0d4',
   },
 }); 

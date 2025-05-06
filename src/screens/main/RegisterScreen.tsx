@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, StyleSheet, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
 import { TextInput, Button, Text, useTheme } from 'react-native-paper';
 import { useApp } from '../../context/AppContext';
 import { useNavigation } from '@react-navigation/native';
@@ -62,6 +62,7 @@ export const RegisterScreen: React.FC = () => {
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.formContainer}>
+          <Image source={require('../../assets/images/logo.png')} style={styles.logo} />
           <Text variant="headlineMedium" style={styles.title}>
             Create Account
           </Text>
@@ -136,6 +137,7 @@ export const RegisterScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#fff7e9',
   },
   scrollContent: {
     flexGrow: 1,
@@ -144,18 +146,35 @@ const styles = StyleSheet.create({
   formContainer: {
     padding: 20,
   },
+  logo: {
+    width: 100,
+    height: 100,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
   title: {
     textAlign: 'center',
     marginBottom: 24,
   },
   input: {
     marginBottom: 16,
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
+    backgroundColor: '#fff0d4',
   },
   button: {
     marginTop: 8,
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   },
   switchButton: {
     marginTop: 16,
+    width: '100%',
+    maxWidth: 400,
+    alignSelf: 'center',
   },
   errorText: {
     textAlign: 'center',

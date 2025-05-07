@@ -419,11 +419,14 @@ export const storage = {
         userId: currentUser.id,
       };
       
-      // Check for duplicates
+      // Check for exact duplicates (same drink, same timestamp, same price)
       const isDuplicate = drinks.some(d => 
         d.timestamp === newDrink.timestamp && 
         d.brand === newDrink.brand && 
-        d.quantity === newDrink.quantity
+        d.quantity === newDrink.quantity &&
+        d.price === newDrink.price &&
+        d.category === newDrink.category &&
+        d.type === newDrink.type
       );
       
       if (isDuplicate) {

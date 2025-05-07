@@ -542,9 +542,224 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
       </View>
 
       <View style={styles.content}>
-        {renderAchievements()}
+        {/* Overview Section */}
+        <Card style={styles.overviewCardProminent}>
+          <Card.Content>
+            <Text style={styles.sectionTitleProminent}>Today's Overview</Text>
+            <View style={styles.overviewContent}>
+              <View style={styles.overviewItem}>
+                <Text style={styles.overviewLabel}>Daily Limit</Text>
+                <Text style={styles.overviewValue}>{dailyConsumption}/{dailyLimit}</Text>
+                <ProgressBar
+                  progress={dailyProgressPercentage}
+                  color={colors.primary}
+                  style={styles.progressBar}
+                />
+              </View>
+              <View style={styles.overviewItem}>
+                <Text style={styles.overviewLabel}>Daily Budget</Text>
+                <Text style={styles.overviewValue}>£{dailySpent.toFixed(2)}/{dailyBudget}</Text>
+                <ProgressBar
+                  progress={dailyBudgetPercentage}
+                  color={colors.primary}
+                  style={styles.progressBar}
+                />
+              </View>
+            </View>
+          </Card.Content>
+        </Card>
+
+        {/* Tree Progress Section */}
+        <Card style={styles.treeCard}>
+          <Card.Content>
+            <View style={styles.treeContent}>
+              <View style={styles.treeContainer}>
+                <Image source={getPlantGrowthImage()} style={styles.plantImage} />
+                <View style={styles.groundContainer}>
+                  <LinearGradient
+                    colors={[colors.primary, colors.primary]}
+                    style={[styles.groundFill, { width: `${successRate * 100}%` }]}
+                  />
+                </View>
+              </View>
+              <View style={styles.progressInfo}>
+                <Text style={styles.successRate}>Long Term Progress</Text>
+                <Text style={styles.progressAmount}>{Math.round(successRate * 100)}%</Text>
+                <Text style={styles.remainingAmount}>
+                  {Math.round((1 - successRate) * 100)}% to next level
+                </Text>
+              </View>
+            </View>
+          </Card.Content>
+        </Card>
+
+        {/* Budget Overview Row */}
+        <View style={styles.budgetRow}>
+          {/* Weekly Budget Section */}
+          <Card style={styles.budgetCard}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>Weekly</Text>
+              <View style={styles.circularProgressContainer}>
+                <AnimatedCircularProgress
+                  size={80}
+                  width={8}
+                  fill={weeklyBudgetPercentage * 100}
+                  tintColor={colors.primary}
+                  backgroundColor="#e0e0e0"
+                  rotation={0}
+                >
+                  {() => (
+                    <View style={styles.circularProgressInner}>
+                      <Text style={styles.circularProgressValue}>
+                        £{weeklySpent.toFixed(0)}
+                      </Text>
+                      <Text style={styles.circularProgressLabel}>
+                        of £{weeklyBudget}
+                      </Text>
+                    </View>
+                  )}
+                </AnimatedCircularProgress>
+              </View>
+              <View style={styles.budgetDetails}>
+                <Text style={styles.budgetRemaining}>
+                  £{(weeklyBudget - weeklySpent).toFixed(2)} remaining
+                </Text>
+              </View>
+            </Card.Content>
+          </Card>
+
+          {/* Monthly Budget Section */}
+          <Card style={styles.budgetCard}>
+            <Card.Content>
+              <Text style={styles.sectionTitle}>Monthly</Text>
+              <View style={styles.circularProgressContainer}>
+                <AnimatedCircularProgress
+                  size={80}
+                  width={8}
+                  fill={monthlyBudgetPercentage * 100}
+                  tintColor={colors.primary}
+                  backgroundColor="#e0e0e0"
+                  rotation={0}
+                >
+                  {() => (
+                    <View style={styles.circularProgressInner}>
+                      <Text style={styles.circularProgressValue}>
+                        £{monthlySpent.toFixed(0)}
+                      </Text>
+                      <Text style={styles.circularProgressLabel}>
+                        of £{monthlyBudget}
+                      </Text>
+                    </View>
+                  )}
+                </AnimatedCircularProgress>
+              </View>
+              <View style={styles.budgetDetails}>
+                <Text style={styles.budgetRemaining}>
+                  £{(monthlyBudget - monthlySpent).toFixed(2)} remaining
+                </Text>
+              </View>
+            </Card.Content>
+          </Card>
+        </View>
+
+        {/* Recent Activity Section */}
+        <Card style={styles.recentCard}>
+          <Card.Content>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Recent Activity</Text>
+              <Button 
+                mode="text" 
+                onPress={handleViewDrinkTracker}
+                textColor={colors.primary}
+              >
+                View All
+              </Button>
+            </View>
+            {recentDrinks.length > 0 ? (
+              recentDrinks.map((drink) => (
+                <View key={drink.id} style={styles.activityItem}>
+                  <MaterialCommunityIcons name="glass-wine" size={24} color={colors.primary} />
+                  <View style={styles.activityInfo}>
+                    <Text style={styles.activityText}>{drink.drink}</Text>
+                    <Text style={styles.activityDateTime}>
+                      {drink.displayDate} at {drink.displayTime}
+                    </Text>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyMessage}>No recent activity</Text>
+            )}
+          </Card.Content>
+        </Card>
+
+        {/* Upcoming Plans Section */}
+        <Card style={styles.preGameCard}>
+          <Card.Content>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Upcoming Plans</Text>
+              <Button 
+                mode="text" 
+                onPress={handleViewPreGamePlanner}
+                textColor={colors.primary}
+              >
+                View All
+              </Button>
+            </View>
+            {upcomingPlans.length > 0 ? (
+              upcomingPlans.map((plan) => (
+                <View key={plan.id} style={styles.planItem}>
+                  <View style={styles.planInfo}>
+                    <Text style={styles.planDateTime}>
+                      {plan.displayDate} at {plan.displayTime}
+                    </Text>
+                    <Text style={styles.planLocation}>{plan.location}</Text>
+                    {plan.notes && (
+                      <Text style={styles.planNotes}>{plan.notes}</Text>
+                    )}
+                  </View>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyPreGameContainer}>
+                <Text style={styles.emptyMessage}>No upcoming plans</Text>
+                <Button
+                  mode="contained"
+                  onPress={handleViewPreGamePlanner}
+                  style={styles.createPlanButton}
+                >
+                  Create Plan
+                </Button>
+              </View>
+            )}
+          </Card.Content>
+        </Card>
+
+        {/* Stage Content Section */}
         {getStageContent()}
-        {/* Add your other dashboard components here */}
+
+        {/* Achievements Section */}
+        {renderAchievements()}
+
+        {/* Quick Actions Section */}
+        <View style={styles.actionsRow}>
+          <Button
+            mode="contained"
+            icon="chart-bar"
+            onPress={handleViewBudgetTracker}
+            style={styles.actionButton}
+          >
+            Budget
+          </Button>
+          <Button
+            mode="contained"
+            icon="account"
+            onPress={handleViewProfile}
+            style={styles.actionButton}
+          >
+            Profile
+          </Button>
+        </View>
       </View>
     </ScrollView>
   );
@@ -1029,5 +1244,27 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     textAlign: 'center',
     marginTop: 4,
+  },
+  budgetRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  budgetCard: {
+    flex: 1,
+    marginHorizontal: 6,
+    backgroundColor: '#fff0d4',
+    borderRadius: 12,
+    elevation: 2,
+  },
+  budgetDetails: {
+    marginTop: 8,
+  },
+  budgetRemaining: {
+    fontSize: 12,
+    color: colors.text,
+    opacity: 0.7,
+    marginBottom: 4,
+    textAlign: 'center',
   },
 }); 

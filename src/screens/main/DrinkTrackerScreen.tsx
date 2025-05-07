@@ -205,6 +205,12 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
             const apiDrinks = await drinkApi.getAll(currentUser.id);
             
             if (Array.isArray(apiDrinks)) {
+              addDebugLog('Received drinks from API', {
+                count: apiDrinks.length,
+                firstDrink: apiDrinks[0],
+                lastDrink: apiDrinks[apiDrinks.length - 1]
+              });
+              
               const analysis = analyzeDrinks(apiDrinks);
               addDebugLog('API drinks analysis', {
                 totalDrinks: analysis.totalDrinks,

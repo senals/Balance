@@ -372,7 +372,7 @@ export const DrinkHierarchySelector: React.FC<DrinkHierarchySelectorProps> = ({
 const styles = StyleSheet.create({
   card: {
     marginBottom: 16,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
     elevation: 2,
   },
@@ -415,7 +415,7 @@ const styles = StyleSheet.create({
   },
   option: {
     width: '48%',
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff7e9',
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.primary,
@@ -424,7 +424,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   selectedOption: {
-    backgroundColor: colors.primary + '20', // 20% opacity of primary color
+    backgroundColor: colors.primary + '20',
     borderWidth: 2,
   },
   optionIcon: {

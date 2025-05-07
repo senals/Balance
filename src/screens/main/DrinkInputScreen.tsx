@@ -43,7 +43,7 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
     
     if (isSubmitting) {
       console.log('Already submitting, preventing duplicate submission');
-      return; // Prevent multiple submissions
+      return;
     }
     
     setIsSubmitting(true);
@@ -74,34 +74,62 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
           location: location.trim(),
           notes: notes.trim(),
           timestamp: new Date().toISOString(),
-          userId: currentUser.id // Ensure userId is included
+          userId: currentUser.id
         };
 
         console.log('Saving drink:', newDrink);
 
         try {
-          // First try to save to API if available
+          let savedDrink;
+          
+          // Try to save to API first if available
           if (apiAvailable) {
-            console.log('Saving drink to API...');
-            const savedDrink = await drinkApi.create(newDrink, currentUser.id);
-            console.log('Drink saved to API successfully:', savedDrink);
-            
-            // Update local storage with the API response
-            await storage.drinks.add(savedDrink);
+            try {
+              console.log('Saving drink to API...');
+              savedDrink = await drinkApi.create(newDrink, currentUser.id);
+              console.log('Drink saved to API successfully:', savedDrink);
+            } catch (apiError) {
+              console.warn('Failed to save to API, falling back to local storage:', apiError);
+              // If API fails, save to local storage
+              console.log('Saving drink to local storage...');
+              savedDrink = await storage.drinks.add(newDrink);
+              console.log('Drink saved to local storage successfully:', savedDrink);
+            }
           } else {
-            // If API is not available, save to local storage only
-            console.log('Saving drink to local storage...');
-            const savedDrink = await storage.drinks.add(newDrink);
+            // If API is not available, save to local storage
+            console.log('API not available, saving to local storage...');
+            savedDrink = await storage.drinks.add(newDrink);
             console.log('Drink saved to local storage successfully:', savedDrink);
           }
 
           // Update the app context with the new drink
-          await addDrink(newDrink);
+          if (savedDrink) {
+            await addDrink(savedDrink);
+            console.log('Drink added to app context:', savedDrink);
+          }
           
           setSnackbarMessage('Drink saved successfully!');
-        } catch (apiError) {
-          console.error('Error saving drink:', apiError);
-          throw apiError;
+          setSnackbarVisible(true);
+          
+          // Reset form
+          setSelectedDrink(null);
+          setPrice('');
+          setLocation('');
+          setNotes('');
+          setQuantity('1');
+          
+          // Navigate back after a short delay
+          setTimeout(() => {
+            navigation.navigate('DrinkTracker');
+          }, 1500);
+        } catch (error) {
+          if (error instanceof Error && error.message.includes('Duplicate drink entry')) {
+            setSnackbarMessage('This drink has already been recorded');
+          } else {
+            setSnackbarMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
+          setSnackbarVisible(true);
+          throw error;
         }
       } else {
         // Handle expense mode
@@ -126,22 +154,22 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
         console.log('Expense saved successfully');
 
         setSnackbarMessage('Expense saved successfully!');
+        setSnackbarVisible(true);
+        
+        // Reset form
+        setPrice('');
+        setLocation('');
+        setNotes('');
+        
+        // Navigate back after a short delay
+        setTimeout(() => {
+          navigation.navigate('BudgetTracker');
+        }, 1500);
       }
-      
-      setSnackbarVisible(true);
-      
-      // Reset form
-      setPrice('');
-      setLocation('');
-      setNotes('');
-      
-      // Navigate back after a short delay
-      setTimeout(() => {
-        navigation.navigate('BudgetTracker');
-      }, 1500);
     } catch (error) {
-      console.error('Error saving drink:', error);
+      console.error('Error saving:', error);
       setSnackbarMessage(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setSnackbarVisible(true);
     } finally {
       setIsSubmitting(false);
     }
@@ -268,6 +296,12 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
           loading={isSubmitting}
           role="button"
           aria-label={isSubmitting ? 'Saving...' : `Save ${inputMode === 'drink' ? 'Drink' : 'Expense'}`}
+          theme={{
+            colors: {
+              primary: colors.primary,
+              onPrimary: '#ffffff',
+            }
+          }}
         >
           {isSubmitting ? 'Saving...' : `Save ${inputMode === 'drink' ? 'Drink' : 'Expense'}`}
         </Button>
@@ -279,6 +313,11 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
           disabled={isSubmitting}
           role="button"
           aria-label="Test Storage"
+          theme={{
+            colors: {
+              primary: colors.primary,
+            }
+          }}
         >
           Test Storage
         </Button>
@@ -323,12 +362,15 @@ const styles = StyleSheet.create({
   },
   segmentedButtons: {
     marginBottom: 16,
+    backgroundColor: '#fff0d4',
+    borderRadius: 8,
+    padding: 4,
   },
   card: {
     marginBottom: 16,
     backgroundColor: '#fff0d4',
     borderRadius: 12,
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+    elevation: 2,
   },
   sectionTitle: {
     fontSize: 18,

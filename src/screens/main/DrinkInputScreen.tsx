@@ -1,14 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, TextInput, Button, Card, IconButton, SegmentedButtons, Snackbar } from 'react-native-paper';
+import { Text, TextInput, Button, Card, IconButton, SegmentedButtons, Snackbar, Chip } from 'react-native-paper';
 import { colors } from '../../theme/colors';
 import { DrinkHierarchySelector } from '../../components/DrinkHierarchySelector';
 import { useApp } from '../../context/AppContext';
 import { drinkApi } from '../../services/drinkApi';
 import { storage } from '../../services/storage';
 
+// Common locations for quick selection
+const COMMON_LOCATIONS = ['Home', 'Bar', 'Restaurant', 'Friend\'s House', 'Student Union'];
+
+// Common quantities for quick selection
+const QUANTITY_PRESETS = ['1', '2', '3', '4', '6'];
+
+// Common price presets
+const PRICE_PRESETS = ['3.50', '4.50', '5.50', '6.50', '7.50'];
+
 export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
-  const { addDrink, addExpense, drinks, error, currentUser } = useApp();
+  const { addDrink, addExpense, drinks, error, currentUser, settings, budget } = useApp();
   const [selectedDrink, setSelectedDrink] = useState<{
     category: string;
     type: string;
@@ -24,6 +33,16 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiAvailable, setApiAvailable] = useState(true);
+  const [recentDrinks, setRecentDrinks] = useState<any[]>([]);
+
+  // Load recent drinks on component mount
+  useEffect(() => {
+    const loadRecentDrinks = async () => {
+      const recent = await storage.drinks.getRecent(5);
+      setRecentDrinks(recent);
+    };
+    loadRecentDrinks();
+  }, []);
 
   // Reset form when mode changes
   useEffect(() => {
@@ -181,6 +200,18 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
     console.log('All stored drinks:', drinks);
   };
 
+  const handleQuickSelect = (drink: any) => {
+    setSelectedDrink({
+      category: drink.category,
+      type: drink.type,
+      brand: drink.brand,
+      alcoholContent: drink.alcoholContent
+    });
+    setPrice(drink.price.toString());
+    setLocation(drink.location);
+    setNotes(drink.notes);
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
@@ -207,31 +238,73 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
         />
         
         {inputMode === 'drink' && (
-          <DrinkHierarchySelector onSelectDrink={setSelectedDrink} />
+          <>
+            <Card style={styles.limitsCard}>
+              <Card.Content>
+                <Text style={styles.sectionTitle}>Current Limits</Text>
+                <View style={styles.limitsContainer}>
+                  <View style={styles.limitItem}>
+                    <Text style={styles.limitLabel}>Daily Limit</Text>
+                    <Text style={styles.limitValue}>{settings.dailyLimit} drinks</Text>
+                  </View>
+                  <View style={styles.limitItem}>
+                    <Text style={styles.limitLabel}>Daily Budget</Text>
+                    <Text style={styles.limitValue}>£{budget.dailyBudget}</Text>
+                  </View>
+                </View>
+              </Card.Content>
+            </Card>
+
+            {recentDrinks.length > 0 && (
+              <Card style={styles.card}>
+                <Card.Content>
+                  <Text style={styles.sectionTitle}>Recent Drinks</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recentDrinksContainer}>
+                    {recentDrinks.map((drink, index) => (
+                      <Chip
+                        key={index}
+                        style={styles.recentDrinkChip}
+                        onPress={() => handleQuickSelect(drink)}
+                        mode="outlined"
+                        selectedColor={colors.primary}
+                        textStyle={{ color: colors.text }}
+                      >
+                        {drink.brand}
+                      </Chip>
+                    ))}
+                  </ScrollView>
+                </Card.Content>
+              </Card>
+            )}
+            
+            <DrinkHierarchySelector onSelectDrink={setSelectedDrink} />
+          </>
         )}
         
         <Card style={styles.card}>
           <Card.Content>
             <Text style={styles.sectionTitle}>Details</Text>
             {inputMode === 'drink' && (
-              <TextInput
-                label="Quantity"
-                value={quantity}
-                onChangeText={setQuantity}
-                inputMode="numeric"
-                style={styles.input}
-                mode="outlined"
-                theme={{ 
-                  colors: { 
-                    background: colors.input,
-                    primary: colors.text,
-                    accent: colors.text,
-                    text: colors.text,
-                    placeholder: colors.text
-                  } 
-                }}
-              />
+              <>
+                <Text style={styles.presetLabel}>Quantity:</Text>
+                <View style={styles.presetContainer}>
+                  {QUANTITY_PRESETS.map((preset) => (
+                    <Chip
+                      key={preset}
+                      selected={quantity === preset}
+                      onPress={() => setQuantity(preset)}
+                      style={styles.presetChip}
+                      mode="outlined"
+                      selectedColor={colors.primary}
+                      textStyle={{ color: colors.text }}
+                    >
+                      {preset}
+                    </Chip>
+                  ))}
+                </View>
+              </>
             )}
+            
             <TextInput
               label="Price (£)"
               value={price}
@@ -249,6 +322,45 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
                 } 
               }}
             />
+            
+            {inputMode === 'drink' && (
+              <>
+                <Text style={styles.presetLabel}>Quick Price:</Text>
+                <View style={styles.presetContainer}>
+                  {PRICE_PRESETS.map((preset) => (
+                    <Chip
+                      key={preset}
+                      selected={price === preset}
+                      onPress={() => setPrice(preset)}
+                      style={styles.presetChip}
+                      mode="outlined"
+                      selectedColor={colors.primary}
+                      textStyle={{ color: colors.text }}
+                    >
+                      £{preset}
+                    </Chip>
+                  ))}
+                </View>
+              </>
+            )}
+            
+            <Text style={styles.presetLabel}>Location:</Text>
+            <View style={styles.presetContainer}>
+              {COMMON_LOCATIONS.map((loc) => (
+                <Chip
+                  key={loc}
+                  selected={location === loc}
+                  onPress={() => setLocation(loc)}
+                  style={styles.presetChip}
+                  mode="outlined"
+                  selectedColor={colors.primary}
+                  textStyle={{ color: colors.text }}
+                >
+                  {loc}
+                </Chip>
+              ))}
+            </View>
+            
             <TextInput
               label="Location (optional)"
               value={location}
@@ -266,6 +378,7 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
                 } 
               }}
             />
+            
             <TextInput
               label="Notes (optional)"
               value={notes}
@@ -392,5 +505,57 @@ const styles = StyleSheet.create({
   },
   snackbar: {
     backgroundColor: colors.primary,
+  },
+  presetLabel: {
+    fontSize: 14,
+    color: colors.text,
+    marginBottom: 8,
+    marginTop: 8,
+  },
+  presetContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 16,
+    gap: 8,
+  },
+  presetChip: {
+    marginRight: 8,
+    marginBottom: 8,
+    backgroundColor: '#fff7e9',
+    borderColor: colors.primary,
+  },
+  recentDrinksContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  recentDrinkChip: {
+    marginRight: 8,
+    backgroundColor: '#fff7e9',
+    borderColor: colors.primary,
+  },
+  limitsCard: {
+    marginBottom: 16,
+    backgroundColor: '#fff0d4',
+    borderRadius: 12,
+    elevation: 2,
+  },
+  limitsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginTop: 8,
+  },
+  limitItem: {
+    alignItems: 'center',
+  },
+  limitLabel: {
+    fontSize: 12,
+    color: colors.text,
+    opacity: 0.7,
+    marginBottom: 4,
+  },
+  limitValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.primary,
   },
 }); 

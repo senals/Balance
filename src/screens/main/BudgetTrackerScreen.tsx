@@ -734,7 +734,7 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
                 style={styles.detailsButton}
                 compact
               >
-                Details
+                View Statistics
               </Button>
             </Card.Content>
           </Card>

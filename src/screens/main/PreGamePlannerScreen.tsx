@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, FlatList, Alert } from 'react-native';
-import { Text, Button, Card, IconButton, TextInput, FAB, Portal, Dialog, Snackbar, SegmentedButtons } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, FlatList, Alert, Dimensions } from 'react-native';
+import { Text, Button, Card, IconButton, TextInput, FAB, Portal, Dialog, Snackbar, SegmentedButtons, HelperText, Surface, Chip } from 'react-native-paper';
 import { colors } from '../../theme/colors';
 import { useApp } from '../../context/AppContext';
 import { PreGamePlan } from '../../services/storage';
 import { format, parse } from 'date-fns';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
   const { preGamePlans, addPreGamePlan, updatePreGamePlan, removePreGamePlan, drinks } = useApp();
@@ -19,6 +22,7 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
   const [notes, setNotes] = useState('');
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
   
   // New state for adherence tracking
   const [trackingMode, setTrackingMode] = useState<'plan' | 'track'>('plan');
@@ -26,6 +30,35 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
   const [actualSpending, setActualSpending] = useState('');
   const [adherenceNotes, setAdherenceNotes] = useState('');
   const [adherenceStatus, setAdherenceStatus] = useState<'pending' | 'success' | 'exceeded'>('pending');
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+
+  // Quick templates for common scenarios
+  const quickTemplates = [
+    {
+      id: 'casual',
+      title: 'Casual Night Out',
+      maxDrinks: '4',
+      maxSpending: '50',
+      description: 'A relaxed evening with friends'
+    },
+    {
+      id: 'party',
+      title: 'Party Night',
+      maxDrinks: '6',
+      maxSpending: '80',
+      description: 'Big night out with friends'
+    },
+    {
+      id: 'dinner',
+      title: 'Dinner & Drinks',
+      maxDrinks: '3',
+      maxSpending: '70',
+      description: 'Nice dinner with a few drinks'
+    }
+  ];
+
+  // Preset spending amounts
+  const presetSpending = ['20', '30', '50', '80', '100'];
 
   // Reset form when dialog is closed
   useEffect(() => {
@@ -47,6 +80,7 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
     setActualSpending('');
     setAdherenceNotes('');
     setAdherenceStatus('pending');
+    setSelectedTemplate(null);
   };
 
   const openAddDialog = () => {
@@ -222,11 +256,23 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
     }
   };
 
+  // Apply template
+  const applyTemplate = (template: typeof quickTemplates[0]) => {
+    setTitle(template.title);
+    setMaxDrinks(template.maxDrinks);
+    setMaxSpending(template.maxSpending);
+    setNotes(template.description);
+    setSelectedTemplate(template.id);
+  };
+
   const renderPlanItem = ({ item }: { item: PreGamePlan }) => (
     <Card style={styles.planCard} onPress={() => openEditDialog(item)}>
       <Card.Content>
         <View style={styles.planHeader}>
-          <Text style={styles.planTitle}>{item.title}</Text>
+          <View style={styles.titleContainer}>
+            <Text style={styles.planTitle}>{item.title}</Text>
+            <Text style={styles.planDate}>{format(new Date(item.date), 'dd MMM yyyy')}</Text>
+          </View>
           <IconButton
             icon={item.completed ? 'check-circle' : 'circle-outline'}
             size={24}
@@ -234,18 +280,34 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
             iconColor={item.completed ? colors.primary : colors.text}
           />
         </View>
-        <Text style={styles.planDate}>Date: {format(new Date(item.date), 'dd MMM yyyy')}</Text>
-        <Text style={styles.planLocation}>Location: {item.location}</Text>
-        <View style={styles.planLimits}>
-          <Text style={styles.planLimit}>Drinks: {item.maxDrinks}</Text>
-          <Text style={styles.planLimit}>Spending: £{item.maxSpending.toFixed(2)}</Text>
+        
+        <View style={styles.locationContainer}>
+          <MaterialCommunityIcons name="map-marker" size={16} color={colors.primary} />
+          <Text style={styles.planLocation}>{item.location}</Text>
         </View>
-        {item.notes && <Text style={styles.planNotes}>Notes: {item.notes}</Text>}
+
+        <View style={styles.limitsContainer}>
+          <View style={styles.limitItem}>
+            <MaterialCommunityIcons name="glass-wine" size={20} color={colors.primary} />
+            <Text style={styles.planLimit}>Max {item.maxDrinks} drinks</Text>
+          </View>
+          <View style={styles.limitItem}>
+            <MaterialCommunityIcons name="currency-gbp" size={20} color={colors.primary} />
+            <Text style={styles.planLimit}>£{item.maxSpending.toFixed(2)}</Text>
+          </View>
+        </View>
+
+        {item.notes && (
+          <View style={styles.notesContainer}>
+            <MaterialCommunityIcons name="note-text" size={16} color={colors.primary} />
+            <Text style={styles.planNotes}>{item.notes}</Text>
+          </View>
+        )}
         
         {item.completed && (
-          <View style={styles.adherenceContainer}>
+          <Surface style={styles.adherenceContainer}>
             <View style={styles.adherenceHeader}>
-              <Text style={styles.adherenceTitle}>Actual Results:</Text>
+              <Text style={styles.adherenceTitle}>Results</Text>
               <Text 
                 style={[
                   styles.adherenceStatus, 
@@ -256,13 +318,19 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
               </Text>
             </View>
             <View style={styles.actualResults}>
-              <Text style={styles.actualResult}>Drinks: {item.actualDrinks || 0} of {item.maxDrinks}</Text>
-              <Text style={styles.actualResult}>Spending: £{(item.actualSpending || 0).toFixed(2)} of £{item.maxSpending.toFixed(2)}</Text>
+              <View style={styles.resultItem}>
+                <Text style={styles.resultLabel}>Drinks</Text>
+                <Text style={styles.resultValue}>{item.actualDrinks || 0}/{item.maxDrinks}</Text>
+              </View>
+              <View style={styles.resultItem}>
+                <Text style={styles.resultLabel}>Spent</Text>
+                <Text style={styles.resultValue}>£{(item.actualSpending || 0).toFixed(2)}/£{item.maxSpending.toFixed(2)}</Text>
+              </View>
             </View>
             {item.adherenceNotes && (
-              <Text style={styles.adherenceNotes}>Notes: {item.adherenceNotes}</Text>
+              <Text style={styles.adherenceNotes}>{item.adherenceNotes}</Text>
             )}
-          </View>
+          </Surface>
         )}
         
         {!item.completed && new Date(item.date) <= new Date() && (
@@ -270,6 +338,7 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
             mode="contained" 
             onPress={() => openTrackDialog(item)}
             style={styles.trackButton}
+            icon="chart-line"
           >
             Track Results
           </Button>
@@ -286,6 +355,7 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
           size={24}
           onPress={() => navigation.goBack()}
           style={styles.backButton}
+          iconColor={colors.primary}
         />
         <Text style={styles.title}>Pre-Game Planner</Text>
       </View>
@@ -297,6 +367,7 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
+            <MaterialCommunityIcons name="calendar-plus" size={64} color={colors.primary} />
             <Text style={styles.emptyText}>No pre-game plans yet</Text>
             <Text style={styles.emptySubtext}>Create a plan to set your limits before social events</Text>
           </View>
@@ -319,45 +390,152 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
           </Dialog.Title>
           <Dialog.Content>
             {trackingMode === 'plan' ? (
-              <>
+              <ScrollView>
+                {!editMode && (
+                  <View style={styles.templatesContainer}>
+                    <Text style={styles.sectionTitle}>Quick Templates</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.templatesScroll}>
+                      {quickTemplates.map((template) => (
+                        <Card
+                          key={template.id}
+                          style={[
+                            styles.templateCard,
+                            selectedTemplate === template.id && styles.selectedTemplate
+                          ]}
+                          onPress={() => applyTemplate(template)}
+                        >
+                          <Card.Content>
+                            <Text style={styles.templateTitle}>{template.title}</Text>
+                            <Text style={styles.templateDescription}>{template.description}</Text>
+                            <View style={styles.templateDetails}>
+                              <Text style={styles.templateDetail}>🍺 {template.maxDrinks} drinks</Text>
+                              <Text style={styles.templateDetail}>£{template.maxSpending}</Text>
+                            </View>
+                          </Card.Content>
+                        </Card>
+                      ))}
+                    </ScrollView>
+                  </View>
+                )}
+
                 <TextInput
                   label="Title"
                   value={title}
-                  onChangeText={setTitle}
+                  onChangeText={(text) => {
+                    setTitle(text);
+                    setSelectedTemplate(null);
+                  }}
                   style={styles.input}
                   mode="outlined"
+                  placeholder="e.g., Friday Night Out"
+                  left={<TextInput.Icon icon="format-title" />}
                 />
-                <TextInput
-                  label="Date (DD-MM-YYYY)"
-                  value={date}
-                  onChangeText={setDate}
-                  style={styles.input}
-                  mode="outlined"
-                  placeholder="15-04-2023"
-                />
+
+                <View style={styles.dateContainer}>
+                  <TextInput
+                    label="Date"
+                    value={date}
+                    onPressIn={() => setShowDatePicker(true)}
+                    style={[styles.input, styles.dateInput]}
+                    mode="outlined"
+                    left={<TextInput.Icon icon="calendar" />}
+                    right={<TextInput.Icon icon="calendar" onPress={() => setShowDatePicker(true)} />}
+                  />
+                  {!date && (
+                    <Button
+                      mode="outlined"
+                      onPress={() => {
+                        const today = new Date();
+                        setDate(format(today, 'dd-MM-yyyy'));
+                      }}
+                      style={styles.todayButton}
+                    >
+                      Today
+                    </Button>
+                  )}
+                </View>
+
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={date ? parse(date, 'dd-MM-yyyy', new Date()) : new Date()}
+                    mode="date"
+                    display="default"
+                    minimumDate={new Date()}
+                    onChange={(event, selectedDate) => {
+                      setShowDatePicker(false);
+                      if (selectedDate) {
+                        setDate(format(selectedDate, 'dd-MM-yyyy'));
+                      }
+                    }}
+                  />
+                )}
+
                 <TextInput
                   label="Location"
                   value={location}
                   onChangeText={setLocation}
                   style={styles.input}
                   mode="outlined"
+                  placeholder="e.g., The Local Pub"
+                  left={<TextInput.Icon icon="map-marker" />}
                 />
-                <TextInput
-                  label="Maximum Drinks"
-                  value={maxDrinks}
-                  onChangeText={setMaxDrinks}
-                  keyboardType="numeric"
-                  style={styles.input}
-                  mode="outlined"
-                />
-                <TextInput
-                  label="Maximum Spending (£)"
-                  value={maxSpending}
-                  onChangeText={setMaxSpending}
-                  keyboardType="numeric"
-                  style={styles.input}
-                  mode="outlined"
-                />
+
+                <View style={styles.limitsContainer}>
+                  <Text style={styles.sectionTitle}>Drink Limit</Text>
+                  <View style={styles.drinkButtons}>
+                    {['2', '4', '6', '8'].map((num) => (
+                      <Chip
+                        key={num}
+                        selected={maxDrinks === num}
+                        onPress={() => setMaxDrinks(num)}
+                        style={styles.drinkChip}
+                      >
+                        {num} drinks
+                      </Chip>
+                    ))}
+                  </View>
+                  <TextInput
+                    label="Custom Drinks"
+                    value={maxDrinks}
+                    onChangeText={(text) => {
+                      setMaxDrinks(text);
+                      setSelectedTemplate(null);
+                    }}
+                    keyboardType="numeric"
+                    style={styles.input}
+                    mode="outlined"
+                    left={<TextInput.Icon icon="glass-wine" />}
+                  />
+                </View>
+
+                <View style={styles.limitsContainer}>
+                  <Text style={styles.sectionTitle}>Spending Limit</Text>
+                  <View style={styles.spendingButtons}>
+                    {presetSpending.map((amount) => (
+                      <Chip
+                        key={amount}
+                        selected={maxSpending === amount}
+                        onPress={() => setMaxSpending(amount)}
+                        style={styles.spendingChip}
+                      >
+                        £{amount}
+                      </Chip>
+                    ))}
+                  </View>
+                  <TextInput
+                    label="Custom Amount (£)"
+                    value={maxSpending}
+                    onChangeText={(text) => {
+                      setMaxSpending(text);
+                      setSelectedTemplate(null);
+                    }}
+                    keyboardType="numeric"
+                    style={styles.input}
+                    mode="outlined"
+                    left={<TextInput.Icon icon="currency-gbp" />}
+                  />
+                </View>
+
                 <TextInput
                   label="Notes (optional)"
                   value={notes}
@@ -366,8 +544,9 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
                   mode="outlined"
                   multiline
                   numberOfLines={3}
+                  left={<TextInput.Icon icon="note-text" />}
                 />
-              </>
+              </ScrollView>
             ) : (
               <>
                 <Text style={styles.trackingTitle}>{title}</Text>
@@ -422,12 +601,12 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
           </Dialog.Content>
           <Dialog.Actions>
             {trackingMode === 'plan' && editMode && (
-              <Button onPress={handleDelete} textColor={colors.error}>
+              <Button onPress={handleDelete} textColor={colors.error} icon="delete">
                 Delete
               </Button>
             )}
             <Button onPress={() => setDialogVisible(false)}>Cancel</Button>
-            <Button onPress={handleSave}>Save</Button>
+            <Button onPress={handleSave} mode="contained">Save</Button>
           </Dialog.Actions>
         </Dialog>
       </Portal>
@@ -437,6 +616,7 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
         style={styles.fab}
         onPress={openAddDialog}
         color={colors.surface}
+        label="New Plan"
       />
 
       <Snackbar
@@ -444,6 +624,10 @@ export const PreGamePlannerScreen = ({ navigation }: { navigation: any }) => {
         onDismiss={() => setSnackbarVisible(false)}
         duration={3000}
         style={styles.snackbar}
+        action={{
+          label: 'Dismiss',
+          onPress: () => setSnackbarVisible(false),
+        }}
       >
         {snackbarMessage}
       </Snackbar>
@@ -461,6 +645,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
     paddingTop: 40,
+    backgroundColor: '#fff0d4',
+    elevation: 2,
   },
   backButton: {
     marginRight: 8,
@@ -483,55 +669,76 @@ const styles = StyleSheet.create({
   planHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  titleContainer: {
+    flex: 1,
   },
   planTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: colors.text,
-    flex: 1,
   },
   planDate: {
     fontSize: 14,
-    color: colors.text,
-    marginBottom: 4,
+    color: colors.text + '80',
+    marginTop: 2,
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   planLocation: {
-    fontSize: 14,
+    fontSize: 16,
     color: colors.text,
-    marginBottom: 8,
+    marginLeft: 4,
   },
-  planLimits: {
+  limitsContainer: {
+    marginBottom: 16,
+  },
+  limitItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    alignItems: 'center',
   },
   planLimit: {
-    fontSize: 14,
+    fontSize: 16,
     color: colors.text,
+    marginLeft: 8,
+  },
+  notesContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
   },
   planNotes: {
     fontSize: 14,
     color: colors.text,
     fontStyle: 'italic',
+    marginLeft: 4,
+    flex: 1,
   },
   adherenceContainer: {
-    marginTop: 8,
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 8,
+    elevation: 1,
+    backgroundColor: colors.surface,
   },
   adherenceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
   },
   adherenceTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: 'bold',
     color: colors.text,
   },
   adherenceStatus: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: 'bold',
   },
   actualResults: {
@@ -539,17 +746,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 8,
   },
-  actualResult: {
+  resultItem: {
+    alignItems: 'center',
+  },
+  resultLabel: {
     fontSize: 14,
+    color: colors.text + '80',
+  },
+  resultValue: {
+    fontSize: 16,
+    fontWeight: 'bold',
     color: colors.text,
   },
   adherenceNotes: {
     fontSize: 14,
     color: colors.text,
     fontStyle: 'italic',
+    marginTop: 8,
   },
   trackButton: {
-    marginTop: 8,
+    marginTop: 12,
   },
   emptyContainer: {
     alignItems: 'center',
@@ -557,14 +773,15 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   emptyText: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: colors.text,
+    marginTop: 16,
     marginBottom: 8,
   },
   emptySubtext: {
-    fontSize: 14,
-    color: colors.text,
+    fontSize: 16,
+    color: colors.text + '80',
     textAlign: 'center',
   },
   fab: {
@@ -575,11 +792,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   input: {
-    marginBottom: 16,
-    backgroundColor: '#fff0d4',
+    marginBottom: 8,
+    backgroundColor: colors.surface,
   },
   snackbar: {
     backgroundColor: colors.primary,
+  },
+  dialogCloseButton: {
+    margin: 0,
   },
   trackingTitle: {
     fontSize: 18,
@@ -616,13 +836,71 @@ const styles = StyleSheet.create({
   segmentedButtons: {
     marginBottom: 16,
   },
-  dialogCloseButton: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    zIndex: 1,
+  templatesContainer: {
+    marginBottom: 16,
   },
-  dialogContent: {
-    backgroundColor: '#fff0d4',
+  templatesScroll: {
+    marginTop: 8,
+  },
+  templateCard: {
+    width: 200,
+    marginRight: 12,
+    backgroundColor: colors.surface,
+  },
+  selectedTemplate: {
+    borderColor: colors.primary,
+    borderWidth: 2,
+  },
+  templateTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text,
+  },
+  templateDescription: {
+    fontSize: 12,
+    color: colors.text + '80',
+    marginTop: 4,
+  },
+  templateDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  templateDetail: {
+    fontSize: 12,
+    color: colors.primary,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  dateContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  dateInput: {
+    flex: 1,
+  },
+  todayButton: {
+    marginLeft: 8,
+  },
+  drinkButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 8,
+  },
+  drinkChip: {
+    margin: 4,
+  },
+  spendingButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 8,
+  },
+  spendingChip: {
+    margin: 4,
   },
 }); 

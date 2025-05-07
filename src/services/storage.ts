@@ -406,6 +406,24 @@ export const storage = {
       }
     },
 
+    async getRecent(limit: number): Promise<DrinkEntry[]> {
+      try {
+        const currentUser = await storage.auth.getCurrentUser();
+        if (!currentUser) {
+          throw new StorageError('User not authenticated', 'getRecent', STORAGE_KEYS.DRINKS);
+        }
+        
+        const drinks = await this.getAll(currentUser.id);
+        // Sort by timestamp in descending order and take the most recent ones
+        return drinks
+          .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+          .slice(0, limit);
+      } catch (error) {
+        console.error('Error getting recent drinks:', error);
+        return [];
+      }
+    },
+
     async add(drink: Omit<DrinkEntry, 'id' | 'userId'>): Promise<DrinkEntry> {
       const currentUser = await storage.auth.getCurrentUser();
       if (!currentUser) {

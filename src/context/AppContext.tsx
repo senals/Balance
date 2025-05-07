@@ -591,8 +591,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       setIsLoading(true);
       clearError();
-      const updated = await storage.settings.update(updates);
-      setSettings(updated);
+      
+      // Merge updates with existing settings
+      const updatedSettings = {
+        ...settings,
+        ...updates,
+        userId: currentUser?.id || settings.userId
+      };
+      
+      // Update in storage
+      await storage.settings.update(updatedSettings);
+      
+      // Update state
+      setSettings(updatedSettings);
+      
+      // Force a re-render of all components using settings
+      setSettings(prev => ({ ...prev }));
+      
     } catch (error) {
       const errorMessage = error instanceof StorageError ? error.message : 'Failed to update settings';
       setError(errorMessage);
@@ -601,7 +616,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } finally {
       setIsLoading(false);
     }
-  }, [clearError]);
+  }, [settings, currentUser?.id, clearError]);
 
   // Drink actions
   const addDrink = useCallback(async (drink: Omit<DrinkEntry, 'id' | 'userId'>) => {
@@ -747,46 +762,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Budget actions
   const updateBudget = useCallback(async (updates: Partial<Omit<BudgetData, 'expenses'>>) => {
     try {
+      setIsLoading(true);
       clearError();
       
-      if (!currentUser?.id) {
-        throw new Error('User not authenticated');
-      }
+      // Merge updates with existing budget
+      const updatedBudget = {
+        ...budget,
+        ...updates,
+        userId: currentUser?.id || budget.userId
+      };
       
-      // Optimistic update
-      setBudget(prev => ({ ...prev, ...updates }));
+      // Update in storage
+      await storage.budget.update(updatedBudget);
       
-      const updatedBudget = await dataService.budget.update(currentUser.id, updates);
-      if (updatedBudget) {
-        // Convert the API budget to the storage budget format
-        const storageBudget: BudgetData = {
-          dailyBudget: updatedBudget.dailyBudget,
-          weeklyBudget: updatedBudget.weeklyBudget,
-          monthlyBudget: updatedBudget.monthlyBudget,
-          userId: updatedBudget.userId,
-          expenses: updatedBudget.expenses.map(exp => ({
-            id: Date.now().toString(), // Generate a new ID for each expense
-            amount: exp.amount,
-            category: exp.category,
-            date: toISOString(exp.date),
-            notes: exp.notes
-          }))
-        };
-        setBudget(storageBudget);
-      }
+      // Update state
+      setBudget(updatedBudget);
+      
+      // Force a re-render of all components using budget
+      setBudget(prev => ({ ...prev }));
+      
     } catch (error) {
-      console.error('Error updating budget:', error);
-      if (error instanceof Error) {
-        console.error('Error details:', {
-          message: error.message,
-          stack: error.stack
-        });
-      }
-      const errorMessage = error instanceof Error ? error.message : 'Failed to update budget';
+      const errorMessage = error instanceof StorageError ? error.message : 'Failed to update budget';
       setError(errorMessage);
+      console.error('Error updating budget:', error);
       throw error;
+    } finally {
+      setIsLoading(false);
     }
-  }, [clearError, currentUser]);
+  }, [budget, currentUser?.id, clearError]);
 
   const addExpense = useCallback(async (expense: Omit<BudgetData['expenses'][0], 'id'>) => {
     try {

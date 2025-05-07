@@ -60,6 +60,74 @@ const generateUniqueKey = (item: any, type: string, index: number): string => {
   return uniqueId;
 };
 
+// Glass Progress Component
+const GlassProgress = ({ progress, dailyLimit }: { progress: number, dailyLimit: number }) => {
+  const glassHeight = 160;
+  const glassWidth = 90;
+  const fillHeight = glassHeight * Math.min(progress, 1);
+  const fillColor = progress >= 1 ? colors.error : colors.primary;
+  
+  // Calculate the position for measurement marks
+  const measurementMarks = [0.25, 0.5, 0.75, 1];
+  
+  return (
+    <View style={styles.glassContainer}>
+      <View style={styles.glass}>
+        {/* Glass Rim */}
+        <View style={[styles.glassRim, { width: glassWidth }]} />
+        
+        {/* Glass Body */}
+        <View style={[styles.glassBody, { 
+          height: glassHeight,
+          width: glassWidth,
+        }]}>
+          {/* Measurement Marks */}
+          {measurementMarks.map((mark) => (
+            <View 
+              key={`mark-${mark}`} 
+              style={[
+                styles.measurementMark,
+                { bottom: glassHeight * mark - 1 }
+              ]} 
+            >
+              <Text style={styles.markLabel}>{Math.round(mark * dailyLimit)}</Text>
+            </View>
+          ))}
+          
+          {/* Glass Fill Effect */}
+          <View 
+            style={[
+              styles.glassFill, 
+              { 
+                height: fillHeight,
+                backgroundColor: fillColor,
+              }
+            ]} 
+          >
+            {/* Surface shine effect */}
+            <View style={styles.liquidSurface} />
+          </View>
+          
+          {/* Glass Shine Effect */}
+          <View style={styles.glassShine} />
+        </View>
+        
+        {/* Glass Base */}
+        <View style={[styles.glassBase, { width: glassWidth * 0.7 }]} />
+        <View style={[styles.glassFooter, { width: glassWidth }]} />
+      </View>
+      
+      {/* Text indicator under the glass */}
+      <Text style={[
+        styles.progressValue,
+        progress >= 1 ? { color: colors.error } : {}
+      ]}>
+        {Math.round(progress * 100)}%
+      </Text>
+    </View>
+  );
+};
+
 export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
   const { drinks = [], settings, error, currentUser, addDrink, updateDrink, removeDrink, setDrinks } = useApp();
   const [loading, setLoading] = useState(true);
@@ -566,14 +634,14 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
             <Card style={styles.progressCard}>
               <Card.Content>
                 <Text style={styles.progressTitle}>Daily Progress</Text>
-                <ProgressBar
-                  progress={progressPercentage}
-                  color={progressPercentage >= 1 ? colors.error : colors.primary}
-                  style={styles.progressBar}
-                />
-                <Text style={styles.progressText}>
-                  {dailyConsumption} / {dailyLimit} drinks today
-                </Text>
+                <View style={styles.progressContent}>
+                  <GlassProgress progress={progressPercentage} dailyLimit={dailyLimit} />
+                  <View style={styles.progressInfo}>
+                    <Text style={styles.progressText}>
+                      {dailyConsumption} / {dailyLimit} drinks today
+                    </Text>
+                  </View>
+                </View>
               </Card.Content>
             </Card>
 
@@ -722,15 +790,21 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 12,
   },
-  progressBar: {
-    height: 6,
-    borderRadius: 3,
-    marginBottom: 6,
+  progressContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    paddingHorizontal: 8,
+  },
+  progressInfo: {
+    flex: 1,
+    marginLeft: 24,
   },
   progressText: {
-    fontSize: 12,
+    fontSize: 16,
     color: colors.text,
-    opacity: 0.7,
+    fontWeight: 'bold',
   },
   statsContainer: {
     flexDirection: 'row',
@@ -887,5 +961,114 @@ const styles = StyleSheet.create({
   retryButton: {
     marginTop: 10,
     backgroundColor: colors.primary,
+  },
+  glassContainer: {
+    alignItems: 'center',
+    padding: 10,
+  },
+  glass: {
+    alignItems: 'center',
+  },
+  glassRim: {
+    height: 10,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderWidth: 2,
+    borderBottomWidth: 0,
+    borderColor: 'rgba(0, 0, 0, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  glassBody: {
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    overflow: 'hidden',
+    position: 'relative',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  glassFill: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 6,
+  },
+  glassBase: {
+    height: 8,
+    borderBottomWidth: 2,
+    borderLeftWidth: 2,
+    borderRightWidth: 2,
+    borderColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  glassFooter: {
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderBottomLeftRadius: 16, 
+    borderBottomRightRadius: 16,
+    borderWidth: 2,
+    borderTopWidth: 0,
+    borderColor: 'rgba(0, 0, 0, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  glassShine: {
+    position: 'absolute',
+    top: 0,
+    left: 10,
+    width: 10,
+    height: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    borderRadius: 5,
+  },
+  liquidSurface: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
+    borderRadius: 10,
+  },
+  measurementMark: {
+    position: 'absolute',
+    left: -5,
+    width: 12,
+    height: 2,
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    zIndex: 10,
+  },
+  markLabel: {
+    position: 'absolute',
+    left: -20,
+    top: -10,
+    fontSize: 10,
+    color: 'rgba(0, 0, 0, 0.7)',
+    fontWeight: '500',
+  },
+  progressValue: {
+    marginTop: 8,
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.primary,
   },
 }); 

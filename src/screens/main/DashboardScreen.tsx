@@ -224,7 +224,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
   );
   
   const dailyLimit = React.useMemo(() => 
-    (settings as UserSettings)?.dailyLimit || 3,
+    settings?.dailyLimit || 3,
     [settings]
   );
   
@@ -234,15 +234,15 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
   );
 
   const dailySpent = dailyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
-  const dailyBudget = (settings as UserSettings)?.dailyBudget || 15;
+  const dailyBudget = settings?.dailyBudget || 15;
   const dailyBudgetPercentage = dailySpent / dailyBudget;
 
   const weeklySpent = weeklyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
-  const weeklyBudget = (settings as UserSettings)?.weeklyBudget || 105;
+  const weeklyBudget = settings?.weeklyBudget || 105;
   const weeklyBudgetPercentage = weeklySpent / weeklyBudget;
 
   const monthlySpent = monthlyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
-  const monthlyBudget = (settings as UserSettings)?.monthlyBudget || 450;
+  const monthlyBudget = settings?.monthlyBudget || 450;
   const monthlyBudgetPercentage = monthlySpent / monthlyBudget;
 
   // Calculate success rate
@@ -586,7 +586,7 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
                 <Text style={styles.successRate}>Long Term Progress</Text>
                 <Text style={styles.progressAmount}>{Math.round(successRate * 100)}%</Text>
                 <Text style={styles.remainingAmount}>
-                  {Math.round((1 - successRate) * 100)}% to next level
+                  {Math.round(successRate * 30)}/30 days completed
                 </Text>
               </View>
             </View>
@@ -769,19 +769,39 @@ export const DashboardScreen = ({ navigation }: { navigation: any }) => {
 const calculateSuccessRate = (drinks: any[], settings: UserSettings) => {
   if (!drinks || drinks.length === 0) return 0;
   
-  const now = new Date();
-  const weekStart = new Date(now);
-  weekStart.setDate(now.getDate() - now.getDay());
+  // Sort all drinks by date
+  const sortedDrinks = [...drinks].sort((a, b) => 
+    new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  );
   
-  const weeklyDrinks = drinks.filter(drink => {
-    const drinkDate = new Date(drink.timestamp);
-    return drinkDate >= weekStart;
+  // Group drinks by day
+  const drinksByDay = sortedDrinks.reduce((acc: { [key: string]: any[] }, drink) => {
+    const date = new Date(drink.timestamp).toDateString();
+    if (!acc[date]) {
+      acc[date] = [];
+    }
+    acc[date].push(drink);
+    return acc;
+  }, {});
+  
+  // Calculate success rate based on days within limit
+  const dailyLimit = settings?.dailyLimit || 3;
+  const goalDays = 30; // Goal is to maintain under limit for 30 days
+  let successfulDays = 0;
+  
+  // Count consecutive days under limit
+  Object.values(drinksByDay).forEach(dayDrinks => {
+    const totalDrinks = dayDrinks.reduce((sum, drink) => sum + (drink.quantity || 1), 0);
+    if (totalDrinks <= dailyLimit) {
+      successfulDays++;
+    } else {
+      // Reset count if a day exceeds the limit
+      successfulDays = 0;
+    }
   });
   
-  const weeklySpent = weeklyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0);
-  const weeklyBudget = settings?.weeklyBudget || 100;
-  
-  return Math.min(weeklySpent / weeklyBudget, 1);
+  // Return progress towards the goal (30 days)
+  return Math.min(successfulDays / goalDays, 1);
 };
 
 const styles = StyleSheet.create({

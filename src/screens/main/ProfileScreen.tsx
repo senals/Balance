@@ -187,7 +187,7 @@ export const ProfileScreen = () => {
       </Card>
 
       <Button
-        mode="outlined"
+        mode="contained"
         onPress={handleLogout}
         loading={loading}
         style={styles.logoutButton}

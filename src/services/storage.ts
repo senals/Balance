@@ -52,6 +52,10 @@ export interface UserSettings {
   privacyModeEnabled: boolean;
   dailyLimit: number;
   userId: string;
+  preGamePlans?: PreGamePlan[];
+  dailyBudget?: number;
+  weeklyBudget?: number;
+  monthlyBudget?: number;
   readinessAssessment?: {
     primaryStage: 'pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance';
     secondaryStage: 'pre-contemplation' | 'contemplation' | 'preparation' | 'action' | 'maintenance' | null;

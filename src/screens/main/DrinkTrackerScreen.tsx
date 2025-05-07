@@ -603,25 +603,36 @@ export const DrinkTrackerScreen = ({ navigation }: { navigation: any }) => {
                   width={Dimensions.get('window').width - 48}
                   height={220}
                   chartConfig={{
-                    backgroundColor: colors.surface,
-                    backgroundGradientFrom: colors.surface,
-                    backgroundGradientTo: colors.surface,
+                    backgroundColor: '#fff0d4',
+                    backgroundGradientFrom: '#fff0d4',
+                    backgroundGradientTo: '#fff0d4',
                     decimalPlaces: 0,
-                    color: (opacity = 1) => colors.primary,
-                    labelColor: (opacity = 1) => colors.text,
+                    color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+                    labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
                     style: {
-                      borderRadius: 16,
+                      borderRadius: 16
                     },
                     propsForDots: {
-                      r: "6",
-                      strokeWidth: "2",
-                      stroke: colors.primary
-                    }
+                      r: '6',
+                      strokeWidth: '2',
+                    },
+                    propsForLabels: {
+                      fontSize: 12,
+                    },
+                    propsForVerticalLabels: {
+                      fontSize: 12,
+                    },
+                    propsForHorizontalLabels: {
+                      fontSize: 12,
+                    },
+                    count: 5,
+                    formatYLabel: (value: string) => `${parseInt(value)}`,
+                    useShadowColorFromDataset: false
                   }}
                   bezier
                   style={styles.chart}
                   withDots={true}
-                  withInnerLines={true}
+                  withInnerLines={false}
                   withOuterLines={true}
                   withVerticalLines={false}
                   withHorizontalLines={true}

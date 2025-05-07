@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, RefreshControl, ScrollView } from 'react-native';
+import { View, StyleSheet, RefreshControl, ScrollView, Dimensions } from 'react-native';
 import { Text, Card, Button, IconButton, ProgressBar, ActivityIndicator } from 'react-native-paper';
+import { LineChart, PieChart } from 'react-native-chart-kit';
 import { colors } from '../../theme/colors';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useApp } from '../../context/AppContext';
@@ -90,6 +91,49 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
   
   const monthlySpent = monthlyDrinksSpent + monthlyExpensesSpent;
   const monthlyBudget = budget?.monthlyBudget || 0;
+
+  // Calculate alcohol spending
+  const alcoholSpending = {
+    daily: dailyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0),
+    weekly: weeklyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0),
+    monthly: monthlyDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0)
+  };
+
+  // Calculate projected yearly alcohol spending
+  const calculateYearlyProjection = () => {
+    // Get the current month's data
+    const currentMonthSpending = alcoholSpending.monthly;
+    
+    // Calculate average daily spending in current month
+    const daysInCurrentMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+    const currentDayOfMonth = new Date().getDate();
+    const averageDailySpending = currentMonthSpending / currentDayOfMonth;
+    
+    // Project for remaining days in current month
+    const remainingDaysInMonth = daysInCurrentMonth - currentDayOfMonth;
+    const projectedRemainingMonthSpending = averageDailySpending * remainingDaysInMonth;
+    
+    // Calculate total projected for current month
+    const projectedCurrentMonth = currentMonthSpending + projectedRemainingMonthSpending;
+    
+    // Calculate average monthly spending from historical data
+    const historicalMonths = Math.max(1, Math.floor(drinks.length / 30)); // Estimate months of data
+    const averageMonthlySpending = alcoholSpending.monthly / historicalMonths;
+    
+    // Weight the projection (70% current month trend, 30% historical average)
+    const weightedMonthlyProjection = (projectedCurrentMonth * 0.7) + (averageMonthlySpending * 0.3);
+    
+    // Project for the year
+    const projectedYearly = weightedMonthlyProjection * 12;
+    
+    return {
+      projectedYearly,
+      confidence: Math.min(100, Math.max(50, historicalMonths * 10)), // Confidence based on data points
+      averageMonthly: weightedMonthlyProjection
+    };
+  };
+
+  const yearlyProjection = calculateYearlyProjection();
 
   const progressPercentage = dailyBudget > 0 ? dailySpent / dailyBudget : 0;
 
@@ -335,9 +379,120 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
   const handleAddExpense = () => {
     navigation.navigate('DrinkInput');
   };
+
+  const handleAddNightOutExpense = () => {
+    navigation.navigate('NightOutExpense');
+  };
   
   const handleViewDetails = () => {
     navigation.navigate('DrinkTracker');
+  };
+
+  // Prepare data for charts
+  const prepareChartData = () => {
+    // Prepare spending trend data
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      return date.toISOString().split('T')[0];
+    }).reverse();
+
+    const spendingData = last7Days.map(date => {
+      const dayDrinks = drinks.filter(drink => 
+        new Date(drink.timestamp).toISOString().split('T')[0] === date
+      );
+      const dayExpenses = budget?.expenses?.filter(expense => 
+        new Date(expense.date).toISOString().split('T')[0] === date
+      ) || [];
+      
+      return {
+        date,
+        total: dayDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0) +
+               dayExpenses.reduce((sum, expense) => sum + (expense.amount || 0), 0),
+        alcohol: dayDrinks.reduce((sum, drink) => sum + (drink.price || 0), 0)
+      };
+    });
+
+    // Format dates for display
+    const formatDate = (dateStr: string) => {
+      const date = new Date(dateStr);
+      return `${date.getDate()}/${date.getMonth() + 1}`;
+    };
+
+    // Prepare spending distribution data
+    const spendingDistribution = [
+      {
+        name: 'Alcohol',
+        amount: alcoholSpending.monthly,
+        color: colors.primary,
+        legendFontColor: colors.text,
+        legendFontSize: 12
+      },
+      {
+        name: 'Night Out',
+        amount: budget?.expenses?.filter(e => e.category === 'night_out')
+          .reduce((sum, e) => sum + (e.amount || 0), 0) || 0,
+        color: colors.secondary,
+        legendFontColor: colors.text,
+        legendFontSize: 12
+      },
+      {
+        name: 'Other',
+        amount: monthlySpent - alcoholSpending.monthly - 
+          (budget?.expenses?.filter(e => e.category === 'night_out')
+            .reduce((sum, e) => sum + (e.amount || 0), 0) || 0),
+        color: '#FFA726',
+        legendFontColor: colors.text,
+        legendFontSize: 12
+      }
+    ];
+
+    // Calculate max value for y-axis scaling
+    const maxSpending = Math.max(
+      ...spendingData.map(d => Math.max(d.total, d.alcohol))
+    );
+    const yAxisMax = Math.ceil(maxSpending * 1.2); // Add 20% padding and round up
+
+    return {
+      spendingData,
+      spendingDistribution,
+      formatDate,
+      yAxisMax
+    };
+  };
+
+  const chartData = prepareChartData();
+  const screenWidth = Dimensions.get('window').width;
+
+  // Chart configuration
+  const chartConfig = {
+    backgroundColor: '#fff0d4',
+    backgroundGradientFrom: '#fff0d4',
+    backgroundGradientTo: '#fff0d4',
+    decimalPlaces: 0,
+    color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+    labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
+    style: {
+      borderRadius: 16
+    },
+    propsForDots: {
+      r: '6',
+      strokeWidth: '2',
+    },
+    propsForLabels: {
+      fontSize: 12,
+    },
+    propsForVerticalLabels: {
+      fontSize: 12,
+    },
+    propsForHorizontalLabels: {
+      fontSize: 12,
+    },
+    count: 5,
+    formatYLabel: (value: string) => `£${parseInt(value)}`,
+    useShadowColorFromDataset: false,
+    useShadowColorFromDatasetForLine: false,
+    useShadowColorFromDatasetForArea: false,
   };
 
   if (loading && !refreshing) {
@@ -457,6 +612,86 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
           </Card.Content>
         </Card>
         
+        {/* Spending Trend Chart */}
+        <Card style={styles.chartCard}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>7-Day Spending Trend</Text>
+            <LineChart
+              data={{
+                labels: chartData.spendingData.map(d => chartData.formatDate(d.date)),
+                datasets: [
+                  {
+                    data: chartData.spendingData.map(d => d.total),
+                    color: () => colors.primary,
+                    strokeWidth: 2,
+                  },
+                  {
+                    data: chartData.spendingData.map(d => d.alcohol),
+                    color: () => colors.secondary,
+                    strokeWidth: 2,
+                  }
+                ],
+                legend: ['Total Spending', 'Alcohol']
+              }}
+              width={screenWidth - 40}
+              height={220}
+              chartConfig={chartConfig}
+              bezier
+              style={styles.chart}
+              yAxisLabel="£"
+              yAxisSuffix=""
+              segments={4}
+              fromZero
+              renderDotContent={({ x, y, index, indexData }) => (
+                <View style={[styles.dotLabel, { top: y - 20, left: x - 20 }]}>
+                  <Text style={styles.dotLabelText}>£{indexData}</Text>
+                </View>
+              )}
+              getDotColor={(dataPoint, dataPointIndex) => {
+                return dataPoint === 0 ? 'transparent' : colors.primary;
+              }}
+              yAxisInterval={Math.ceil(chartData.yAxisMax / 4)}
+              withInnerLines={false}
+              withOuterLines={true}
+              withVerticalLines={false}
+              withHorizontalLines={true}
+              withDots={true}
+              withShadow={false}
+              withVerticalLabels={true}
+              withHorizontalLabels={true}
+            />
+          </Card.Content>
+        </Card>
+
+        {/* Spending Distribution Chart */}
+        <Card style={styles.chartCard}>
+          <Card.Content>
+            <Text style={styles.sectionTitle}>Monthly Spending Distribution</Text>
+            <PieChart
+              data={chartData.spendingDistribution}
+              width={screenWidth - 40}
+              height={220}
+              chartConfig={chartConfig}
+              accessor="amount"
+              backgroundColor="transparent"
+              paddingLeft="15"
+              style={styles.chart}
+              center={[(screenWidth - 40) / 4, 0]}
+              absolute
+            />
+            <View style={styles.legendContainer}>
+              {chartData.spendingDistribution.map((item, index) => (
+                <View key={index} style={styles.legendItem}>
+                  <View style={[styles.legendColor, { backgroundColor: item.color }]} />
+                  <Text style={styles.legendText}>
+                    {item.name}: £{item.amount.toFixed(2)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </Card.Content>
+        </Card>
+        
         {/* Budget Summary and Recent Expenses in a row */}
         <View style={styles.bottomRow}>
           {/* Budget Summary */}
@@ -476,6 +711,20 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
                   <Text style={styles.summaryLabel}>Daily Avg</Text>
                   <Text style={styles.summaryValue}>
                     £{(monthlySpent / (new Date().getDate())).toFixed(2)}
+                  </Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Alcohol Spending</Text>
+                  <Text style={styles.summaryValue}>£{alcoholSpending.monthly.toFixed(2)}</Text>
+                  <Text style={styles.summarySubtext}>
+                    {((alcoholSpending.monthly / monthlySpent) * 100).toFixed(1)}% of total
+                  </Text>
+                </View>
+                <View style={styles.summaryItem}>
+                  <Text style={styles.summaryLabel}>Projected Yearly</Text>
+                  <Text style={styles.summaryValue}>£{yearlyProjection.projectedYearly.toFixed(2)}</Text>
+                  <Text style={styles.summarySubtext}>
+                    Confidence: {yearlyProjection.confidence.toFixed(0)}%
                   </Text>
                 </View>
               </View>
@@ -516,7 +765,15 @@ export const BudgetTrackerScreen = ({ navigation }: { navigation: any }) => {
                 style={styles.addButton}
                 compact
               >
-                Add Expense
+                Add Drink
+              </Button>
+              <Button 
+                mode="contained" 
+                onPress={handleAddNightOutExpense}
+                style={[styles.addButton, { marginTop: 8 }]}
+                compact
+              >
+                Add Night Out Expense
               </Button>
             </Card.Content>
           </Card>
@@ -577,7 +834,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     backgroundColor: '#fff0d4',
     borderRadius: 12,
-    elevation: 2,
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   },
   budgetContent: {
     flexDirection: 'row',
@@ -601,7 +858,7 @@ const styles = StyleSheet.create({
   },
   budgetFill: {
     width: '100%',
-    backgroundColor: colors.primary + '40', // 40% opacity
+    backgroundColor: colors.primary + '40',
     borderBottomLeftRadius: 40,
     borderBottomRightRadius: 40,
   },
@@ -639,14 +896,14 @@ const styles = StyleSheet.create({
     marginRight: 6,
     backgroundColor: '#fff0d4',
     borderRadius: 12,
-    elevation: 2,
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   },
   recentCard: {
     flex: 1,
     marginLeft: 6,
     backgroundColor: '#fff0d4',
     borderRadius: 12,
-    elevation: 2,
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   },
   sectionTitle: {
     fontSize: 16,
@@ -740,5 +997,49 @@ const styles = StyleSheet.create({
   testButton: {
     marginTop: 10,
     backgroundColor: colors.primary,
+  },
+  summarySubtext: {
+    fontSize: 10,
+    color: colors.text,
+    opacity: 0.6,
+  },
+  chartCard: {
+    marginBottom: 12,
+    backgroundColor: '#fff0d4',
+    borderRadius: 12,
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+  },
+  chart: {
+    marginVertical: 8,
+    borderRadius: 16,
+  },
+  dotLabel: {
+    position: 'absolute',
+    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+    padding: 4,
+    borderRadius: 4,
+  },
+  dotLabelText: {
+    fontSize: 10,
+    color: colors.text,
+  },
+  legendContainer: {
+    marginTop: 16,
+    paddingHorizontal: 16,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  legendColor: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  legendText: {
+    fontSize: 12,
+    color: colors.text,
   },
 }); 

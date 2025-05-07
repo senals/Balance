@@ -17,6 +17,8 @@ import { StatisticsScreen } from './src/screens/main/StatisticsScreen';
 import { SettingsScreen } from './src/screens/main/SettingsScreen';
 import { ReadinessAssessmentScreen } from './src/screens/onboarding/ReadinessAssessmentScreen';
 import { DevelopmentScreen } from './src/screens/main/DevelopmentScreen';
+import { NightOutExpenseScreen } from './src/screens/main/NightOutExpenseScreen';
+import { AchievementsScreen } from './src/screens/main/AchievementsScreen';
 
 // Import navigation types
 import { RootStackParamList } from './src/navigation/types';
@@ -50,6 +52,8 @@ const AppContent = () => {
               <Stack.Screen name="Statistics" component={StatisticsScreen} />
               <Stack.Screen name="Settings" component={SettingsScreen} />
               <Stack.Screen name="Development" component={DevelopmentScreen} />
+              <Stack.Screen name="NightOutExpense" component={NightOutExpenseScreen} />
+              <Stack.Screen name="Achievements" component={AchievementsScreen} />
             </>
           )}
         </Stack.Navigator>

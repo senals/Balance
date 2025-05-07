@@ -5,6 +5,7 @@ import { colors } from '../../theme/colors';
 import { DrinkHierarchySelector } from '../../components/DrinkHierarchySelector';
 import { useApp } from '../../context/AppContext';
 import { drinkApi } from '../../services/drinkApi';
+import { storage } from '../../services/storage';
 
 export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
   const { addDrink, addExpense, drinks, error, currentUser } = useApp();
@@ -22,6 +23,7 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
   const [snackbarVisible, setSnackbarVisible] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [apiAvailable, setApiAvailable] = useState(true);
 
   // Reset form when mode changes
   useEffect(() => {
@@ -72,16 +74,30 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
           location: location.trim(),
           notes: notes.trim(),
           timestamp: new Date().toISOString(),
+          userId: currentUser.id // Ensure userId is included
         };
 
         console.log('Saving drink:', newDrink);
 
         try {
-          // Use AppContext's addDrink which handles both local state and MongoDB
-          console.log('Calling addDrink with user ID:', currentUser.id);
-          const savedDrink = await addDrink(newDrink);
-          console.log('Drink saved successfully:', savedDrink);
+          // First try to save to API if available
+          if (apiAvailable) {
+            console.log('Saving drink to API...');
+            const savedDrink = await drinkApi.create(newDrink, currentUser.id);
+            console.log('Drink saved to API successfully:', savedDrink);
+            
+            // Update local storage with the API response
+            await storage.drinks.add(savedDrink);
+          } else {
+            // If API is not available, save to local storage only
+            console.log('Saving drink to local storage...');
+            const savedDrink = await storage.drinks.add(newDrink);
+            console.log('Drink saved to local storage successfully:', savedDrink);
+          }
 
+          // Update the app context with the new drink
+          await addDrink(newDrink);
+          
           setSnackbarMessage('Drink saved successfully!');
         } catch (apiError) {
           console.error('Error saving drink:', apiError);
@@ -145,6 +161,8 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
           size={24}
           onPress={() => navigation.goBack()}
           style={styles.backButton}
+          role="button"
+          aria-label="Go back"
         />
         <Text style={styles.title}>Add {inputMode === 'drink' ? 'Drink' : 'Expense'}</Text>
       </View>
@@ -172,7 +190,7 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
                 label="Quantity"
                 value={quantity}
                 onChangeText={setQuantity}
-                keyboardType="numeric"
+                inputMode="numeric"
                 style={styles.input}
                 mode="outlined"
                 theme={{ 
@@ -190,7 +208,7 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
               label="Price (£)"
               value={price}
               onChangeText={setPrice}
-              keyboardType="numeric"
+              inputMode="numeric"
               style={styles.input}
               mode="outlined"
               theme={{ 
@@ -248,6 +266,8 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
           style={styles.saveButton}
           disabled={isSubmitting || (inputMode === 'drink' && !selectedDrink)}
           loading={isSubmitting}
+          role="button"
+          aria-label={isSubmitting ? 'Saving...' : `Save ${inputMode === 'drink' ? 'Drink' : 'Expense'}`}
         >
           {isSubmitting ? 'Saving...' : `Save ${inputMode === 'drink' ? 'Drink' : 'Expense'}`}
         </Button>
@@ -257,6 +277,8 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
           onPress={handleTestStorage}
           style={styles.testButton}
           disabled={isSubmitting}
+          role="button"
+          aria-label="Test Storage"
         >
           Test Storage
         </Button>
@@ -267,6 +289,8 @@ export const DrinkInputScreen = ({ navigation }: { navigation: any }) => {
         onDismiss={() => setSnackbarVisible(false)}
         duration={3000}
         style={styles.snackbar}
+        role="alert"
+        aria-live="polite"
       >
         {snackbarMessage}
       </Snackbar>
@@ -302,9 +326,9 @@ const styles = StyleSheet.create({
   },
   card: {
     marginBottom: 16,
-    backgroundColor: colors.surface,
+    backgroundColor: '#fff0d4',
     borderRadius: 12,
-    elevation: 2,
+    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
   },
   sectionTitle: {
     fontSize: 18,
@@ -314,7 +338,7 @@ const styles = StyleSheet.create({
   },
   input: {
     marginBottom: 16,
-    backgroundColor: '#fff0d4',
+    backgroundColor: '#fff7e9',
   },
   saveButton: {
     marginTop: 8,
